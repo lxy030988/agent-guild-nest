@@ -33,8 +33,10 @@ async function bootstrap() {
   // 配置 Swagger
   const config = new DocumentBuilder()
     .setTitle('Agent Guild Nest API')
-    .setDescription('Agent Guild Nest RESTful API 文档')
+    .setDescription('Web3 / DAO 驱动的多智能体协作与管理平台 API')
     .setVersion('1.0')
+    .addBearerAuth() // 添加 JWT Bearer Token 认证
+    .addTag('认证', 'Web3 钱包登录与用户认证')
     .addTag('users', '用户管理')
     .addTag('posts', '文章管理')
     .build();

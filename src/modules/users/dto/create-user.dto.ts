@@ -2,18 +2,25 @@ import {
   IsString,
   IsEmail,
   IsOptional,
-  IsInt,
-  Min,
-  Max,
+  IsEthereumAddress,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateUserDto {
-  @ApiProperty({ description: '用户名', example: 'John Doe' })
-  @IsString()
-  readonly name: string;
+  @ApiProperty({
+    description: '钱包地址',
+    example: '0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb',
+  })
+  @IsEthereumAddress()
+  readonly walletAddress: string;
 
-  @ApiProperty({ description: '邮箱地址', example: 'user@example.com' })
+  @ApiPropertyOptional({ description: '用户名', example: 'John Doe' })
+  @IsOptional()
+  @IsString()
+  readonly name?: string;
+
+  @ApiPropertyOptional({ description: '邮箱地址', example: 'user@example.com' })
+  @IsOptional()
   @IsEmail()
-  readonly email: string;
+  readonly email?: string;
 }

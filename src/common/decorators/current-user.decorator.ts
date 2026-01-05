@@ -2,11 +2,23 @@ import { createParamDecorator, ExecutionContext } from '@nestjs/common';
 
 /**
  * 自定义装饰器：获取当前用户
- * 使用示例：@CurrentUser() user: User
+ * 使用示例：@CurrentUser() user: User 或 @CurrentUser('sub') userId: number
  */
 export const CurrentUser = createParamDecorator(
-  (data: unknown, ctx: ExecutionContext) => {
+  (data: string | undefined, ctx: ExecutionContext) => {
     const request = ctx.switchToHttp().getRequest();
-    return request.user; // 从请求中获取用户信息（需要先通过认证中间件设置）
+    const user = request.user;
+
+    console.log(
+      '[CurrentUser DEBUG] data:',
+      data,
+      '| user:',
+      JSON.stringify(user),
+    );
+
+    // 如果指定了字段名，返回该字段；否则返回整个用户对象
+    const result = data ? user?.[data] : user;
+    console.log('[CurrentUser DEBUG] returning:', result);
+    return result;
   },
 );

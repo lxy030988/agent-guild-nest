@@ -9,14 +9,16 @@ datasource db {
   provider = "postgresql"
 }
 
-// User 模型
+// User 模型 - 支持 Web3 登录
 model User {
-  id        Int      @id @default(autoincrement())
-  email     String   @unique
-  name      String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  posts     Post[]
+  id            Int      @id @default(autoincrement())
+  walletAddress String   @unique // 钱包地址（主要登录凭证）
+  email         String?  // 可选邮箱
+  name          String?  // 用户名
+  nonce         String?  // 用于签名验证的随机数
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  posts         Post[]
 }
 
 // Post 模型
