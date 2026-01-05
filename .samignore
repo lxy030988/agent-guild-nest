@@ -1,0 +1,15 @@
+# SAM ignores - exclude development files but include dist
+.git
+.gitignore
+.aws-sam
+test
+*.md
+!package.json
+!package-lock.json
+!pnpm-lock.yaml
+tsconfig.json
+tsconfig.build.json
+nest-cli.json
+eslint.config.mjs
+.prettierrc
+

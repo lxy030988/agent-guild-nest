@@ -1,0 +1,334 @@
+# ============================================
+# AWS SAM 模板 - NestJS Lambda 部署配置
+# ============================================
+# 本模板定义了完整的 VPC 网络架构，包括：
+# - 1个VPC (10.0.0.0/16)
+# - 1个公网子网 (部署NAT Gateway)
+# - 3个私网子网 (部署Lambda和RDS)
+# - NAT Gateway (提供私网访问互联网)
+# - Internet Gateway (VPC与互联网的桥梁)
+# ============================================
+
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: NestJS Application with VPC Configuration
+
+# ============================================
+# 参数定义
+# ============================================
+# 部署时可以动态传入的参数
+Parameters:
+  # 环境名称（开发/预生产/生产）
+  Environment:
+    Type: String
+    Default: production
+    AllowedValues:
+      - development
+      - staging
+      - production
+    Description: Environment name
+
+  # 数据库连接URL（敏感信息，不会在控制台显示）
+  DatabaseUrl:
+    Type: String
+    Description: PostgreSQL database connection URL
+    NoEcho: true # 隐藏敏感信息
+
+# ============================================
+# 全局配置
+# ============================================
+# 所有Lambda函数的默认配置
+Globals:
+  Function:
+    Timeout: 30 # Lambda超时时间（秒）
+    MemorySize: 1024 # Lambda内存大小（MB）
+    Runtime: nodejs24.x # Node.js运行时版本
+    Environment:
+      Variables:
+        NODE_ENV: !Ref Environment # 环境变量
+
+# ============================================
+# 资源定义
+# ============================================
+Resources:
+  # ==========================================
+  # VPC (虚拟私有云)
+  # ==========================================
+  # 创建一个隔离的虚拟网络空间
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16 # IP地址范围：10.0.0.0 - 10.0.255.255 (65,536个IP)
+      EnableDnsHostnames: true # 启用DNS主机名（RDS需要）
+      EnableDnsSupport: true # 启用DNS解析
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-vpc
+
+  # ==========================================
+  # Internet Gateway (互联网网关)
+  # ==========================================
+  # VPC与互联网之间的桥梁，允许VPC内资源访问互联网
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-igw
+
+  # 将Internet Gateway附加到VPC
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  # ==========================================
+  # 公网子网 (Public Subnet)
+  # ==========================================
+  # 用途：部署NAT Gateway
+  # 特点：有公网IP，可以直接访问互联网
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.1.0/24 # IP范围：10.0.1.0 - 10.0.1.255 (256个IP)
+      AvailabilityZone: !Select [0, !GetAZs ''] # 选择第一个可用区（如us-east-1a）
+      MapPublicIpOnLaunch: true # 自动分配公网IP
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-public-subnet-1
+
+  # 公网子网路由表
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-public-rt
+
+  # 公网子网路由规则
+  # 将所有外网流量(0.0.0.0/0)路由到Internet Gateway
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0 # 所有外网地址
+      GatewayId: !Ref InternetGateway # 下一跳：Internet Gateway
+
+  # 将路由表关联到公网子网
+  PublicSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet
+      RouteTableId: !Ref PublicRouteTable
+
+  # ==========================================
+  # NAT Gateway (网络地址转换网关)
+  # ==========================================
+  # 用途：让私网子网的资源访问互联网
+  # 工作原理：将私有IP转换为公网IP
+
+  # NAT Gateway需要的弹性公网IP
+  NATGatewayEIP:
+    Type: AWS::EC2::EIP
+    DependsOn: AttachGateway
+    Properties:
+      Domain: vpc # 用于VPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-nat-eip
+
+  # NAT Gateway（部署在公网子网）
+  NATGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NATGatewayEIP.AllocationId # 绑定弹性IP
+      SubnetId: !Ref PublicSubnet # 必须部署在公网子网
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-nat
+
+  # ==========================================
+  # 私有子网 (Private Subnets)
+  # ==========================================
+  # 用途：部署Lambda和RDS
+  # 特点：无公网IP，通过NAT Gateway访问互联网
+  # 创建3个私有子网以实现高可用（分布在3个可用区）
+
+  # 私有子网1 (可用区A)
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.11.0/24 # IP范围：10.0.11.0 - 10.0.11.255
+      AvailabilityZone: !Select [0, !GetAZs ''] # 可用区A (如us-east-1a)
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-private-subnet-1
+
+  # 私有子网2 (可用区B)
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.12.0/24 # IP范围：10.0.12.0 - 10.0.12.255
+      AvailabilityZone: !Select [1, !GetAZs ''] # 可用区B (如us-east-1b)
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-private-subnet-2
+
+  # 私有子网3 (可用区C)
+  PrivateSubnet3:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.13.0/24 # IP范围：10.0.13.0 - 10.0.13.255
+      AvailabilityZone: !Select [2, !GetAZs ''] # 可用区C (如us-east-1c)
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-private-subnet-3
+
+  # 私有子网路由表（3个私有子网共用一个路由表）
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-private-rt
+
+  # 私有子网路由规则
+  # 将所有外网流量(0.0.0.0/0)路由到NAT Gateway
+  # 这样私网资源就能通过NAT访问互联网了
+  PrivateRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0 # 所有外网地址
+      NatGatewayId: !Ref NATGateway # 下一跳：NAT Gateway
+
+  # 将路由表关联到私有子网1
+  PrivateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet1
+      RouteTableId: !Ref PrivateRouteTable
+
+  # 将路由表关联到私有子网2
+  PrivateSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet2
+      RouteTableId: !Ref PrivateRouteTable
+
+  # 将路由表关联到私有子网3
+  PrivateSubnet3RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet3
+      RouteTableId: !Ref PrivateRouteTable
+
+  # ==========================================
+  # 安全组 (Security Groups)
+  # ==========================================
+  # 安全组 = 虚拟防火墙，控制进出流量
+
+  # Lambda安全组
+  LambdaSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for Lambda function
+      VpcId: !Ref VPC
+      # 出站规则（Lambda向外发送的流量）
+      SecurityGroupEgress:
+        # 允许访问PostgreSQL (RDS)
+        - IpProtocol: tcp
+          FromPort: 5432 # PostgreSQL端口
+          ToPort: 5432
+          Description: Allow PostgreSQL access to RDS
+          CidrIp: 0.0.0.0/0 # 允许访问任何IP的5432端口
+        # 允许HTTPS访问（用于访问AWS服务和外部API）
+        - IpProtocol: tcp
+          FromPort: 443 # HTTPS端口
+          ToPort: 443
+          Description: Allow HTTPS for AWS services
+          CidrIp: 0.0.0.0/0 # 允许访问任何IP的443端口
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-lambda-sg
+
+  # ==========================================
+  # Lambda 函数
+  # ==========================================
+  # NestJS应用的Lambda函数
+  NestJSFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-nestjs-api
+      CodeUri: ./ # 代码目录（当前目录）
+      Handler: dist/src/lambda.handler # Lambda入口点（编译后的路径）
+      Runtime: nodejs24.x # Node.js 24.x运行时
+      Timeout: 30 # 超时时间30秒
+      MemorySize: 1024 # 1GB内存
+
+      # VPC配置（将Lambda部署到VPC内）
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroup # 使用Lambda安全组
+        SubnetIds: # 部署到3个私有子网（高可用）
+          - !Ref PrivateSubnet1
+          - !Ref PrivateSubnet2
+          - !Ref PrivateSubnet3
+
+      # 环境变量
+      Environment:
+        Variables:
+          NODE_ENV: !Ref Environment # 环境名称
+          DATABASE_URL: !Ref DatabaseUrl # 数据库连接URL
+
+      # API路由配置
+      Events:
+        # 捕获所有路径的请求（如/users, /posts等）
+        ApiEvent:
+          Type: HttpApi
+          Properties:
+            Path: /{proxy+} # 匹配所有路径
+            Method: ANY # 匹配所有HTTP方法
+        # 根路径请求（/）
+        RootEvent:
+          Type: HttpApi
+          Properties:
+            Path: /
+            Method: ANY
+
+# ==========================================
+# 输出 (Outputs)
+# ==========================================
+# 部署完成后显示的信息
+Outputs:
+  # API Gateway URL
+  ApiUrl:
+    Description: API Gateway endpoint URL
+    Value: !Sub 'https://${ServerlessHttpApi}.execute-api.${AWS::Region}.amazonaws.com/'
+
+  # Lambda函数ARN
+  FunctionArn:
+    Description: Lambda Function ARN
+    Value: !GetAtt NestJSFunction.Arn
+
+  # VPC ID（导出供其他栈使用）
+  VpcId:
+    Description: VPC ID
+    Value: !Ref VPC
+    Export:
+      Name: !Sub ${AWS::StackName}-VpcId
+
+  # Lambda安全组ID（导出供其他栈使用，如RDS可以引用）
+  LambdaSecurityGroupId:
+    Description: Lambda Security Group ID
+    Value: !Ref LambdaSecurityGroup
+    Export:
+      Name: !Sub ${AWS::StackName}-LambdaSG
