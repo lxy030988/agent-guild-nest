@@ -20,6 +20,7 @@ model User {
   updatedAt     DateTime @updatedAt
   posts         Post[]
   agents        Agent[]  // 拥有的 Agents
+  publishedJobs Job[]    @relation("JobOwner") // 发布的 Jobs（第三阶段）
 }
 
 // Post 模型
@@ -114,7 +115,9 @@ model Agent {
   owner         User           @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   
   // 第三阶段：与 Jobs 的关联
-  // jobs          Job[]          @relation("AgentJobs")
+  jobs          Job[]          @relation("AgentJobs")
+  matches       JobAgentMatch[] @relation("AgentMatches")
+  applications  JobApplication[] @relation("AgentApplications")
   
   // 第五阶段：统计数据
   // dailyStats    AgentDailyStats[]
@@ -132,4 +135,137 @@ model Agent {
   @@index([contractAddress])
   @@index([rating])        // 排行榜查询
   @@index([isVerified])    // 查询已验证的 Agents
+}
+
+// ============================================
+// Jobs 市场模块（第三阶段）
+// ============================================
+
+// Job 分类枚举
+enum JobCategory {
+  CODE_REVIEW
+  CONTENT_CREATION
+  DATA_ANALYSIS
+  TRANSLATION
+  TESTING
+  RESEARCH
+  OTHER
+}
+
+// Job 状态
+enum JobStatus {
+  OPEN           // 待匹配
+  MATCHED        // 已匹配 Agent
+  IN_PROGRESS    // 执行中
+  SUBMITTED      // 已提交结果
+  COMPLETED      // 已完成
+  CANCELLED      // 已取消
+  DISPUTED       // 有争议（第五阶段）
+}
+
+// Job 主模型
+model Job {
+  id          Int      @id @default(autoincrement())
+  
+  // 基本信息
+  title       String
+  description String   @db.Text
+  category    JobCategory
+  tags        String[]
+  
+  // 需求定义
+  requiredCapabilities String[] // 需要的 Agent 能力
+  inputData   Json                // 任务输入数据
+  expectedOutput String? @db.Text // 期望输出说明
+  
+  // 财务信息
+  budget      Decimal  @db.Decimal(10, 2)
+  currency    String   @default("USDC")
+  escrowAmount Decimal @db.Decimal(10, 2) // 托管金额（预留第四阶段）
+  
+  // 时间信息
+  deadline    DateTime?
+  estimatedDuration Int? // 预计耗时（分钟）
+  
+  // 状态管理
+  status      JobStatus @default(OPEN)
+  
+  // 关联关系
+  ownerId     Int
+  owner       User     @relation("JobOwner", fields: [ownerId], references: [id])
+  
+  assignedAgentId Int?
+  assignedAgent   Agent? @relation("AgentJobs", fields: [assignedAgentId], references: [id])
+  
+  // 执行信息
+  startedAt   DateTime?
+  completedAt DateTime?
+  submittedAt DateTime?
+  approvedAt  DateTime?
+  
+  // 结果数据
+  resultData  Json?
+  feedback    String?  @db.Text
+  rating      Int?     // 1-5 星评分
+  
+  // 关联记录
+  recommendations JobAgentMatch[]
+  applications    JobApplication[]
+  
+  // 其他
+  metadata    Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([ownerId])
+  @@index([assignedAgentId])
+  @@index([status])
+  @@index([category])
+  @@index([createdAt])
+}
+
+// Agent 匹配推荐
+model JobAgentMatch {
+  id          Int    @id @default(autoincrement())
+  jobId       Int
+  job         Job    @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  agentId     Int
+  agent       Agent  @relation("AgentMatches", fields: [agentId], references: [id], onDelete: Cascade)
+  
+  matchScore  Float  // 匹配分数 0-100
+  reason      String // 推荐理由
+  
+  createdAt   DateTime @default(now())
+  
+  @@unique([jobId, agentId])
+  @@index([jobId])
+  @@index([agentId])
+}
+
+// Agent 申请记录（可选功能，P1）
+model JobApplication {
+  id          Int    @id @default(autoincrement())
+  jobId       Int
+  job         Job    @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  agentId     Int
+  agent       Agent  @relation("AgentApplications", fields: [agentId], references: [id], onDelete: Cascade)
+  
+  message     String? @db.Text
+  proposedPrice Decimal? @db.Decimal(10, 2)
+  estimatedTime Int? // 预计完成时间（分钟）
+  status      ApplicationStatus @default(PENDING)
+  
+  createdAt   DateTime @default(now())
+  
+  @@unique([jobId, agentId])
+  @@index([jobId])
+  @@index([agentId])
+  @@index([status])
+}
+
+// 申请状态
+enum ApplicationStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
 }

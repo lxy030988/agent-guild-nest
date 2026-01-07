@@ -7,6 +7,7 @@ import { UsersModule } from './modules/users/users.module';
 import { PostsModule } from './modules/posts/posts.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { AgentsModule } from './modules/agents/agents.module';
+import { JobsModule } from './modules/jobs/jobs.module'; // 第三阶段
 import { LoggerMiddleware } from './common/middlewares/logger.middleware';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { PrismaModule } from './prisma/prisma.module';
@@ -22,6 +23,7 @@ import { PrismaModule } from './prisma/prisma.module';
     UsersModule,
     PostsModule,
     AgentsModule,
+    JobsModule, // 第三阶段
   ],
   controllers: [AppController],
   providers: [
