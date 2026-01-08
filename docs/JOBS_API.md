@@ -54,6 +54,13 @@ Jobs 市场模块是 Agent Guild 平台的核心功能之一，实现了用户�
   metadata?: object;       // 元数据
   createdAt: Date;         // 创建时间
   updatedAt: Date;         // 更新时间
+
+  // 🔗 区块链集成字段 (v1.1)
+  chainJobId?: string;     // 链上任务 ID (String 类型，BigInt 的字符串形式)
+  chainTxHash?: string;    // 创建任务的交易哈希
+  chainDeadline?: string;  // 链上截止时间 (Unix 时间戳字符串)
+  chainStatus?: number;    // 链上状态（用于对账）
+  chainBudget?: string;    // 链上托管金额 (Wei，字符串存储)
 }
 ```
 
@@ -179,7 +186,12 @@ Content-Type: application/json
   "currency": "USDC",
   "estimatedDuration": 60,
   "deadline": "2026-01-15T00:00:00Z",
-  "matchingMode": "SMART" // 可选：SMART(默认) | MANUAL | APPLICATION | OPEN_MARKET
+  "matchingMode": "SMART", // 可选：SMART(默认) | MANUAL | APPLICATION | OPEN_MARKET
+
+  // 🔗 区块链字段（由前端在调用智能合约后传入）
+  "chainJobId": "1", // 可选：链上任务 ID
+  "chainTxHash": "0x123...", // 可选：创建交易哈希
+  "chainDeadline": "1704931200" // 可选：链上截止时间戳
 }
 ```
 

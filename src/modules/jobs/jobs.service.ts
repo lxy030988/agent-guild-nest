@@ -7,6 +7,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { CreateJobDto } from './dto/create-job.dto';
 import { UpdateJobDto } from './dto/update-job.dto';
 import { QueryJobDto } from './dto/query-job.dto';
+
 import { JobStatus } from '@prisma/client';
 
 @Injectable()
@@ -17,13 +18,26 @@ export class JobsService {
    * 创建 Job
    */
   async create(userId: number, dto: CreateJobDto) {
-    // escrowAmount 暂时等于 budget（第四阶段会完善托管逻辑）
     const job = await this.prisma.job.create({
       data: {
-        ...dto,
-        escrowAmount: dto.budget,
-        ownerId: userId,
+        title: dto.title,
+        description: dto.description,
+        category: dto.category,
         tags: dto.tags || [],
+        requiredCapabilities: dto.requiredCapabilities,
+        inputData: dto.inputData,
+        expectedOutput: dto.expectedOutput || null,
+        budget: dto.budget,
+        currency: dto.currency || 'ETH',
+        escrowAmount: dto.budget, // 与 budget 相同
+        deadline: dto.deadline ? new Date(dto.deadline) : null,
+        estimatedDuration: dto.estimatedDuration || null,
+        matchingMode: dto.matchingMode || 'SMART',
+        ownerId: userId,
+        // 链上字段
+        chainJobId: dto.chainJobId || null,
+        chainTxHash: dto.chainTxHash || null,
+        chainDeadline: dto.chainDeadline || null,
       },
       include: {
         owner: {
@@ -98,7 +112,7 @@ export class JobsService {
     ]);
 
     return {
-      data,
+      data: data,
       meta: {
         total,
         page,
@@ -139,6 +153,7 @@ export class JobsService {
       throw new NotFoundException(`Job with ID ${id} not found`);
     }
 
+    // 转换 BigInt 为字符串
     return job;
   }
 
@@ -160,7 +175,20 @@ export class JobsService {
 
     return this.prisma.job.update({
       where: { id },
-      data: dto,
+      data: {
+        ...(dto.title && { title: dto.title }),
+        ...(dto.description && { description: dto.description }),
+        ...(dto.budget !== undefined && { budget: dto.budget }),
+        ...(dto.tags && { tags: dto.tags }),
+        ...(dto.deadline && { deadline: new Date(dto.deadline) }),
+        ...(dto.expectedOutput !== undefined && {
+          expectedOutput: dto.expectedOutput,
+        }),
+        ...(dto.assignedAgentId !== undefined && {
+          assignedAgentId: dto.assignedAgentId,
+        }),
+        ...(dto.status && { status: dto.status }),
+      },
       include: {
         owner: true,
         assignedAgent: true,

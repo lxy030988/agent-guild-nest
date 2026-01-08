@@ -99,4 +99,26 @@ export class CreateJobDto {
   @IsEnum(MatchingMode)
   @IsOptional()
   matchingMode?: MatchingMode;
+
+  // 智能合约字段（前端传递）
+  @ApiPropertyOptional({ example: '1', description: '链上任务 ID' })
+  @IsString()
+  @IsOptional()
+  chainJobId?: string;
+
+  @ApiPropertyOptional({
+    example: '0x1234...',
+    description: '创建任务的交易哈希',
+  })
+  @IsString()
+  @IsOptional()
+  chainTxHash?: string;
+
+  @ApiPropertyOptional({
+    example: '1704326400',
+    description: '链上截止时间（Unix 时间戳）',
+  })
+  @IsString()
+  @IsOptional()
+  chainDeadline?: string;
 }
