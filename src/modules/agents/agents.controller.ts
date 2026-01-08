@@ -10,6 +10,7 @@ import {
   ParseIntPipe,
   UseGuards,
   Request,
+  UnauthorizedException,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -144,6 +145,10 @@ export class AgentsController {
   @ApiResponse({ status: 403, description: '无权限' })
   @ApiResponse({ status: 404, description: 'Agent 未找到' })
   remove(@Param('id', ParseIntPipe) id: number, @Request() req) {
+    if (!req.user || !req.user.userId) {
+      throw new UnauthorizedException('User not authenticated');
+    }
+
     return this.agentsService.remove(id, req.user.userId);
   }
 }

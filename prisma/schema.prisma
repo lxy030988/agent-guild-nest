@@ -163,6 +163,14 @@ enum JobStatus {
   DISPUTED       // 有争议（第五阶段）
 }
 
+// Job 匹配模式
+enum MatchingMode {
+  SMART         // 智能匹配（自动分配）
+  MANUAL        // 手动选择（从推荐中选）
+  APPLICATION   // 申请制（Agent 主动申请）
+  OPEN_MARKET   // 开放市场（推荐 + 申请）
+}
+
 // Job 主模型
 model Job {
   id          Int      @id @default(autoincrement())
@@ -189,6 +197,7 @@ model Job {
   
   // 状态管理
   status      JobStatus @default(OPEN)
+  matchingMode MatchingMode @default(SMART) // 匹配模式
   
   // 关联关系
   ownerId     Int

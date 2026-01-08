@@ -10,7 +10,7 @@ export class JobsMatchingService {
    * 智能匹配算法
    * 根据 capabilities、评分、成功率等因素计算匹配度
    */
-  async findMatchingAgents(jobId: number) {
+  async findMatchingAgents(jobId: number, matchingMode: string = 'SMART') {
     const job = await this.prisma.job.findUnique({
       where: { id: jobId },
     });
@@ -81,8 +81,8 @@ export class JobsMatchingService {
     );
     const topMatches = sortedMatches.slice(0, 5);
 
-    // 4. 自动分配最佳匹配的 Agent
-    if (sortedMatches.length > 0) {
+    // 4. 只有 SMART 模式才自动分配最佳匹配的 Agent
+    if (matchingMode === 'SMART' && sortedMatches.length > 0) {
       const bestMatch: any = sortedMatches[0];
       await this.prisma.job.update({
         where: { id: jobId },
@@ -168,5 +168,46 @@ export class JobsMatchingService {
     });
 
     return matches;
+  }
+
+  /**
+   * 手动分配 Agent 到 Job
+   */
+  async assignAgent(jobId: number, agentId: number, userId: number) {
+    const job = await this.prisma.job.findUnique({
+      where: { id: jobId },
+    });
+
+    if (!job) {
+      throw new Error('Job not found');
+    }
+
+    if (job.ownerId !== userId) {
+      throw new Error('Only job owner can assign agent');
+    }
+
+    if (job.status !== 'OPEN') {
+      throw new Error('Job is not in OPEN status');
+    }
+
+    return this.prisma.job.update({
+      where: { id: jobId },
+      data: {
+        assignedAgentId: agentId,
+        status: 'MATCHED',
+      },
+      include: {
+        owner: {
+          select: { id: true, walletAddress: true, name: true },
+        },
+        assignedAgent: {
+          include: {
+            owner: {
+              select: { id: true, walletAddress: true, name: true },
+            },
+          },
+        },
+      },
+    });
   }
 }

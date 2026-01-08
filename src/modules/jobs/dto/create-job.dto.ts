@@ -21,6 +21,13 @@ export enum JobCategory {
   OTHER = 'OTHER',
 }
 
+export enum MatchingMode {
+  SMART = 'SMART',
+  MANUAL = 'MANUAL',
+  APPLICATION = 'APPLICATION',
+  OPEN_MARKET = 'OPEN_MARKET',
+}
+
 /**
  * 创建 Job DTO
  */
@@ -82,4 +89,14 @@ export class CreateJobDto {
   @IsNumber()
   @IsOptional()
   estimatedDuration?: number;
+
+  @ApiPropertyOptional({
+    enum: MatchingMode,
+    default: MatchingMode.SMART,
+    description:
+      '匹配模式：SMART-智能匹配, MANUAL-手动选择, APPLICATION-申请制, OPEN_MARKET-开放市场',
+  })
+  @IsEnum(MatchingMode)
+  @IsOptional()
+  matchingMode?: MatchingMode;
 }

@@ -40,8 +40,11 @@ export class JobsController {
   async create(@CurrentUser() user: any, @Body() dto: CreateJobDto) {
     const job = await this.jobsService.create(user.userId, dto);
 
-    // 自动匹配 Agents
-    await this.matchingService.findMatchingAgents(job.id);
+    // 自动匹配 Agents（根据匹配模式决定是否自动分配）
+    await this.matchingService.findMatchingAgents(
+      job.id,
+      dto.matchingMode || 'SMART',
+    );
 
     return job;
   }
@@ -204,5 +207,20 @@ export class JobsController {
     @Body() body: { reason: string },
   ) {
     return this.executionService.rejectJob(id, user.userId, body.reason);
+  }
+
+  /**
+   * 手动分配 Agent 到 Job
+   */
+  @Post(':id/assign')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: '手动分配 Agent 到 Job' })
+  assignAgent(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: any,
+    @Body() body: { agentId: number },
+  ) {
+    return this.matchingService.assignAgent(id, body.agentId, user.userId);
   }
 }

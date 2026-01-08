@@ -254,9 +254,11 @@ export class AgentsService {
   async remove(id: number, userId: number) {
     // 检查 Agent 是否存在和权限
     const agent = await this.prisma.agent.findUnique({ where: { id } });
+
     if (!agent) {
       throw new NotFoundException(`Agent with ID ${id} not found`);
     }
+
     if (agent.ownerId !== userId) {
       throw new ForbiddenException('You can only delete your own agents');
     }
