@@ -2,10 +2,14 @@ import { Injectable, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { JobStatus } from '@prisma/client';
 import axios from 'axios';
+import { BillsService } from '../bills/bills.service';
 
 @Injectable()
 export class JobsExecutionService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private billsService: BillsService,
+  ) {}
 
   /**
    * Agent 所有者接受任务
@@ -237,6 +241,16 @@ export class JobsExecutionService {
           },
         });
       }
+    }
+
+    // 自动生成账单
+    try {
+      console.log(`✅ Job ${jobId} approved, generating bills...`);
+      await this.billsService.generateBill(jobId);
+      console.log(`✅ Bills generated for Job ${jobId}`);
+    } catch (billError) {
+      console.error(`Failed to generate bills for Job ${jobId}:`, billError);
+      // 不影响主流程
     }
 
     return updatedJob;

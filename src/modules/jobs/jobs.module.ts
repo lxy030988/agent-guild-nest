@@ -6,9 +6,10 @@ import { JobsExecutionService } from './jobs-execution.service';
 import { JobApplicationController } from './job-application.controller';
 import { JobApplicationService } from './job-application.service';
 import { PrismaModule } from '../../prisma/prisma.module';
+import { BillsModule } from '../bills/bills.module';
 
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, BillsModule],
   controllers: [JobsController, JobApplicationController],
   providers: [
     JobsService,

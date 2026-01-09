@@ -21,6 +21,11 @@ model User {
   posts         Post[]
   agents        Agent[]  // 拥有的 Agents
   publishedJobs Job[]    @relation("JobOwner") // 发布的 Jobs（第三阶段）
+  
+  // 第四阶段：Wallet 和 Bills
+  transactionsFrom  Transaction[] @relation("TransactionFrom")
+  transactionsTo    Transaction[] @relation("TransactionTo")
+  bills             Bill[]
 }
 
 // Post 模型
@@ -238,6 +243,10 @@ model Job {
   @@index([status])
   @@index([category])
   @@index([createdAt])
+  
+  // 第四阶段：Wallet 和 Bills
+  transactions  Transaction[]
+  bills         Bill[]
 }
 
 // Agent 匹配推荐
@@ -284,4 +293,88 @@ enum ApplicationStatus {
   PENDING
   ACCEPTED
   REJECTED
+}
+
+// ============================================
+// Wallet 和 Bills 模块（第四阶段）
+// ============================================
+
+// 交易类型枚举
+enum TransactionType {
+  JOB_PAYMENT       // Job 支付给 Agent
+  PLATFORM_FEE      // 平台手续费
+  REFUND            // 退款
+  STAKING_REWARD    // 质押奖励
+  WITHDRAWAL        // 提现
+}
+
+// 交易记录
+model Transaction {
+  id          Int      @id @default(autoincrement())
+  
+  type        TransactionType
+  amount      Decimal  @db.Decimal(18, 6)
+  currency    String   @default("ETH")
+  
+  // 关联
+  fromUserId  Int?
+  fromUser    User?    @relation("TransactionFrom", fields: [fromUserId], references: [id])
+  toUserId    Int?
+  toUser      User?    @relation("TransactionTo", fields: [toUserId], references: [id])
+  
+  jobId       Int?
+  job         Job?     @relation(fields: [jobId], references: [id])
+  
+  // 链上信息
+  txHash      String?  // 交易哈希
+  blockNumber String?  // 区块号
+  
+  description String?  @db.Text
+  metadata    Json?
+  
+  createdAt   DateTime @default(now())
+  
+  @@index([fromUserId])
+  @@index([toUserId])
+  @@index([jobId])
+  @@index([type])
+  @@index([createdAt])
+}
+
+// 账单类型
+enum BillType {
+  INCOME        // 收入账单（Agent 收到的）
+  EXPENSE       // 支出账单（Job Owner 支付的）
+  PLATFORM_FEE  // 平台费用账单
+}
+
+// 账单模型
+model Bill {
+  id          Int      @id @default(autoincrement())
+  
+  billNumber  String   @unique  // 账单编号（自动生成）
+  type        BillType
+  amount      Decimal  @db.Decimal(18, 6)
+  currency    String   @default("ETH")
+  
+  // 关联
+  userId      Int
+  user        User     @relation(fields: [userId], references: [id])
+  jobId       Int?
+  job         Job?     @relation(fields: [jobId], references: [id])
+  
+  // 账单详情
+  description String   @db.Text
+  details     Json?    // 详细条目
+  
+  // 状态
+  isPaid      Boolean  @default(true)  // 支付状态
+  paidAt      DateTime?
+  
+  createdAt   DateTime @default(now())
+  
+  @@index([userId])
+  @@index([jobId])
+  @@index([type])
+  @@index([createdAt])
 }
