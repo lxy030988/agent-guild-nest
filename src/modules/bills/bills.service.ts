@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class BillsService {
@@ -98,7 +99,7 @@ export class BillsService {
   }
 
   /**
-   * 生成账单（Job 完成时调用）
+   * 生成账单（Job 完成时调用）- 收取 5% 平台费
    */
   async generateBill(jobId: number) {
     const job = await this.prisma.job.findUnique({
@@ -192,5 +193,94 @@ export class BillsService {
     });
 
     console.log(`✅ Generated bills and transactions for Job #${jobId}`);
+  }
+
+  /**
+   * 生成账单（DAO 争议解决时调用）- 不收取平台费
+   */
+  async generateBillForDAOResolution(jobId: number) {
+    const job = await this.prisma.job.findUnique({
+      where: { id: jobId },
+      include: {
+        owner: true,
+        assignedAgent: {
+          include: { owner: true },
+        },
+      },
+    });
+
+    if (!job || !job.assignedAgent) {
+      throw new NotFoundException('Job or agent not found');
+    }
+
+    const timestamp = Date.now();
+    // DAO 判定：Agent 获得 100% budget，无平台费
+    const agentPayment = job.budget;
+    const platformFee = new Prisma.Decimal(0);
+
+    // 生成 Agent 收入账单 + 创建交易记录
+    await this.prisma.bill.create({
+      data: {
+        billNumber: `BILL-DAO-INCOME-${timestamp}-${jobId}`,
+        type: 'INCOME',
+        amount: agentPayment,
+        currency: 'ETH',
+        userId: job.assignedAgent.ownerId,
+        jobId: job.id,
+        description: `DAO 裁决任务收益（无手续费）: ${job.title}`,
+        details: {
+          budget: job.budget.toString(),
+          platformFee: '0',
+          actualIncome: agentPayment.toString(),
+          resolvedBy: 'DAO',
+        },
+        isPaid: true,
+        paidAt: new Date(),
+      },
+    });
+
+    // 创建 Agent 收入的 Transaction 记录
+    await this.prisma.transaction.create({
+      data: {
+        type: 'JOB_PAYMENT',
+        amount: agentPayment,
+        currency: 'ETH',
+        fromUserId: job.ownerId,
+        toUserId: job.assignedAgent.ownerId,
+        jobId: job.id,
+        txHash: job.chainTxHash,
+        description: `DAO 裁决支付: ${job.title}`,
+        metadata: {
+          budget: job.budget.toString(),
+          platformFee: '0',
+          resolvedBy: 'DAO',
+        },
+      },
+    });
+
+    // 生成 Job Owner 支出账单
+    await this.prisma.bill.create({
+      data: {
+        billNumber: `BILL-DAO-EXPENSE-${timestamp}-${jobId}`,
+        type: 'EXPENSE',
+        amount: job.budget,
+        currency: 'ETH',
+        userId: job.ownerId,
+        jobId: job.id,
+        description: `DAO 裁决任务支付: ${job.title}`,
+        details: {
+          totalAmount: job.budget.toString(),
+          agentPayment: agentPayment.toString(),
+          platformFee: '0',
+          resolvedBy: 'DAO',
+        },
+        isPaid: true,
+        paidAt: new Date(),
+      },
+    });
+
+    console.log(
+      `✅ Generated DAO resolution bills (no platform fee) for Job #${jobId}`,
+    );
   }
 }

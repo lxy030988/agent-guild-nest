@@ -8,10 +8,14 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { CreateDisputeDto } from './dto/create-dispute.dto';
 import { SubmitVoteDto } from './dto/submit-vote.dto';
 import { DisputeStatus, VoteChoice, Prisma, JobStatus } from '@prisma/client';
+import { BillsService } from '../bills/bills.service';
 
 @Injectable()
 export class DisputesService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private billsService: BillsService,
+  ) {}
 
   /**
    * 创建争议
@@ -332,6 +336,25 @@ export class DisputesService {
         },
       });
     });
+
+    // 3. 如果判定为完成，生成账单（DAO 裁决，不收取平台费）
+    if (finalJobStatus === JobStatus.RESOLVED_COMPLETED) {
+      try {
+        console.log(
+          `✅ Dispute ${disputeId} resolved as COMPLETED, generating bills (no platform fee)...`,
+        );
+        await this.billsService.generateBillForDAOResolution(dispute.jobId);
+        console.log(
+          `✅ DAO resolution bills generated for Job ${dispute.jobId}`,
+        );
+      } catch (billError) {
+        console.error(
+          `Failed to generate DAO resolution bills for Job ${dispute.jobId}:`,
+          billError,
+        );
+        // 不影响主流程
+      }
+    }
 
     return updatedDispute;
   }
