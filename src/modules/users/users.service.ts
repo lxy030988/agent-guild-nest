@@ -14,19 +14,12 @@ export class UsersService {
   }
 
   async findAll() {
-    return this.prisma.user.findMany({
-      include: {
-        posts: true, // 包含用户的所有文章
-      },
-    });
+    return this.prisma.user.findMany();
   }
 
   async findOne(id: number) {
     const user = await this.prisma.user.findUnique({
       where: { id },
-      include: {
-        posts: true,
-      },
     });
 
     if (!user) {

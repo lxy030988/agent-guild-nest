@@ -38,7 +38,6 @@ async function bootstrap() {
     .addBearerAuth() // 添加 JWT Bearer Token 认证
     .addTag('认证', 'Web3 钱包登录与用户认证')
     .addTag('users', '用户管理')
-    .addTag('posts', '文章管理')
     .build();
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api', app, document);
