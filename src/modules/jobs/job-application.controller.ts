@@ -25,7 +25,7 @@ import {
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
-@ApiTags('Job Applications')
+@ApiTags('job applications')
 @Controller('jobs')
 @UseGuards(JwtAuthGuard)
 @ApiBearerAuth()

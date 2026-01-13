@@ -15,7 +15,7 @@ import {
   ActivityListResponseDto,
 } from './dto/dashboard.dto';
 
-@ApiTags('Dashboard')
+@ApiTags('dashboard')
 @Controller('dashboard')
 @UseGuards(JwtAuthGuard)
 @ApiBearerAuth()

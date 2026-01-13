@@ -26,6 +26,10 @@ model User {
   transactionsFrom  Transaction[] @relation("TransactionFrom")
   transactionsTo    Transaction[] @relation("TransactionTo")
   bills             Bill[]
+  
+  // 第五阶段：DAO 争议解决
+  createdDisputes   Dispute[]     @relation("DisputeCreator")  // 创建的争议
+  votes             Vote[]        // 投票记录
 }
 
 
@@ -156,6 +160,8 @@ enum JobStatus {
   COMPLETED      // 已完成
   CANCELLED      // 已取消
   DISPUTED       // 有争议（第五阶段）
+  RESOLVED_COMPLETED // 争议解决-已支付
+  RESOLVED_CANCELLED // 争议解决-已退款
 }
 
 // Job 匹配模式
@@ -237,6 +243,9 @@ model Job {
   // 第四阶段：Wallet 和 Bills
   transactions  Transaction[]
   bills         Bill[]
+  
+  // 第五阶段：DAO 争议解决
+  disputes      Dispute[]
 }
 
 // Agent 匹配推荐
@@ -366,5 +375,100 @@ model Bill {
   @@index([userId])
   @@index([jobId])
   @@index([type])
+  @@index([createdAt])
+}
+
+// ============================================
+// DAO 争议解决模块（第五阶段）
+// ============================================
+
+// 争议状态
+enum DisputeStatus {
+  PENDING      // 待投票
+  VOTING       // 投票中
+  RESOLVED     // 已解决
+  EXPIRED      // 已过期
+}
+
+// 投票选项
+enum VoteChoice {
+  APPROVE      // 支持（认可工作成果）
+  REJECT       // 反对（认为工作不达标）
+  ABSTAIN      // 弃权
+}
+
+// 争议模型
+model Dispute {
+  id              Int            @id @default(autoincrement())
+  
+  // 关联任务
+  jobId           Int
+  job             Job            @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  
+  // 创建者
+  creatorId       Int
+  creator         User           @relation("DisputeCreator", fields: [creatorId], references: [id])
+  
+  // 争议内容
+  title           String         // 争议标题
+  reason          String         @db.Text
+  evidence        String?        @db.Text  // 证据链接或描述
+  
+  // 状态和时间
+  status          DisputeStatus  @default(PENDING)
+  votingStartsAt  DateTime?
+  votingEndsAt    DateTime?
+  
+  // 投票统计（冗余字段，用于快速查询）
+  approveVotes    Int            @default(0)
+  rejectVotes     Int            @default(0)
+  abstainVotes    Int            @default(0)
+  totalVoteWeight String         @default("0")  // 总投票权重（代币数量字符串）
+  
+  // 决议结果
+  resolution      String?        @db.Text
+  resolvedAt      DateTime?
+  
+  // 链上信息（预留）
+  chainDisputeId  String?        @unique
+  chainTxHash     String?
+  
+  // 关联投票
+  votes           Vote[]
+  
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  
+  @@index([jobId])
+  @@index([creatorId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// 投票记录
+model Vote {
+  id          Int         @id @default(autoincrement())
+  
+  // 关联争议
+  disputeId   Int
+  dispute     Dispute     @relation(fields: [disputeId], references: [id], onDelete: Cascade)
+  
+  // 投票人
+  voterId     Int
+  voter       User        @relation(fields: [voterId], references: [id])
+  
+  // 投票内容
+  choice      VoteChoice
+  tokenWeight String      @default("0")  // 投票权重（代币数量，字符串存储）
+  reason      String?     @db.Text
+  
+  // 链上信息（预留）
+  txHash      String?     // 链上交易哈希
+  
+  createdAt   DateTime    @default(now())
+  
+  @@unique([disputeId, voterId])  // 一个用户对一个争议只能投一次票
+  @@index([disputeId])
+  @@index([voterId])
   @@index([createdAt])
 }

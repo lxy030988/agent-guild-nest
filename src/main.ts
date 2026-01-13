@@ -36,9 +36,15 @@ async function bootstrap() {
     .setDescription('Web3 / DAO 驱动的多智能体协作与管理平台 API')
     .setVersion('1.0')
     .addBearerAuth() // 添加 JWT Bearer Token 认证
-    .addTag('认证', 'Web3 钱包登录与用户认证')
+    .addTag('auth', 'Web3 钱包登录与用户认证')
     .addTag('users', '用户管理')
-    .addTag('posts', '文章管理')
+    .addTag('agents', 'Agent 注册与管理')
+    .addTag('jobs', '任务市场与执行')
+    .addTag('job applications', '任务申请')
+    .addTag('disputes', 'DAO 争议解决与投票')
+    .addTag('wallet', '钱包与资金管理')
+    .addTag('bills', '账单系统')
+    .addTag('dashboard', '数据面板统计')
     .build();
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api', app, document);

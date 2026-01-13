@@ -21,7 +21,7 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 
-@ApiTags('Jobs')
+@ApiTags('jobs')
 @Controller('jobs')
 export class JobsController {
   constructor(
