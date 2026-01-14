@@ -40,12 +40,18 @@ export class JobsController {
   async create(@CurrentUser() user: any, @Body() dto: CreateJobDto) {
     const job = await this.jobsService.create(user.userId, dto);
 
-    // 自动匹配 Agents（根据匹配模式决定是否自动分配）
-    await this.matchingService.findMatchingAgents(
-      job.id,
-      dto.matchingMode || 'SMART',
-    );
+    const matchingMode = dto.matchingMode || 'SMART';
 
+    // 只有 SMART 模式才异步执行匹配并自动分配最佳 Agent
+    // 其他模式的推荐会在用户访问详情页时按需生成（通过 /jobs/:id/recommendations）
+    if (matchingMode === 'SMART') {
+      // 异步执行，不阻塞响应
+      this.matchingService.findMatchingAgents(job.id, 'SMART').catch((err) => {
+        console.error(`[Job ${job.id}] Auto-matching failed:`, err);
+      });
+    }
+
+    // 立即返回 job，不等待匹配完成
     return job;
   }
 
