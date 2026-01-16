@@ -4,18 +4,20 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { UsersModule } from './modules/users/users.module';
 import { PostsModule } from './modules/posts/posts.module';
+import { WalletModule } from './modules/wallet/wallet.module';
 import { LoggerMiddleware } from './common/middlewares/logger.middleware';
 import { PrismaModule } from './prisma/prisma.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
-      isGlobal: true, // 使配置全局可用
+      isGlobal: true,
       envFilePath: '.env',
     }),
     PrismaModule,
     UsersModule,
     PostsModule,
+    WalletModule,
   ],
   controllers: [AppController],
   providers: [AppService],

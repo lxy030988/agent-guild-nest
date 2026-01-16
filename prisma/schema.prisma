@@ -11,12 +11,90 @@ datasource db {
 
 // User 模型
 model User {
-  id        Int      @id @default(autoincrement())
-  email     String   @unique
-  name      String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  posts     Post[]
+  id               Int              @id @default(autoincrement())
+  email            String           @unique
+  name             String?
+  walletAddress    String?          @unique
+  agentEarnings    String           @default("0")  // micro USDC
+  pendingAgentEarnings String        @default("0")  // micro USDC
+  jobEscrowBalance String           @default("0")  // micro USDC
+  pendingJobEscrow String           @default("0")  // micro USDC
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  posts            Post[]
+  stakingRecords   StakingRecord[]
+  transactions     Transaction[]
+  withdrawalRequests WithdrawalRequest[]
+}
+
+// 质押记录
+model StakingRecord {
+  id            String   @id @default(uuid())
+  userId        Int
+  amount        String   // micro USDC
+  rewardAmount  String   @default("0") // 累计奖励 micro USDC
+  status        StakingStatus @default(ACTIVE)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+enum StakingStatus {
+  ACTIVE
+  UNSTAKING
+  COMPLETED
+}
+
+// 提现请求
+model WithdrawalRequest {
+  id             String            @id @default(uuid())
+  userId         Int
+  amount         String           // micro USDC
+  penaltyAmount  String           @default("0") // 提前取回罚款 micro USDC
+  unlockAt       DateTime
+  status         WithdrawalStatus @default(PENDING)
+  txHash         String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+enum WithdrawalStatus {
+  PENDING
+  READY_TO_CLAIM
+  COMPLETED
+  CANCELLED
+}
+
+// 交易记录
+model Transaction {
+  id          String          @id @default(uuid())
+  userId      Int
+  type        TransactionType
+  title       String
+  description String
+  amount      String         // micro USDC
+  currency    String         @default("USDC")
+  status      TransactionStatus @default(PENDING)
+  txHash      String?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+enum TransactionType {
+  STAKE
+  UNSTAKE
+  CLAIM_REWARD
+  AGENT_EARNINGS
+  ESCROW_DEPOSIT
+  ESCROW_RELEASE
+}
+
+enum TransactionStatus {
+  PENDING
+  COMPLETED
+  FAILED
 }
 
 // Post 模型

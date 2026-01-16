@@ -25,9 +25,10 @@ export class PrismaService
 
     const pool = new Pool({
       connectionString: url.toString(),
-      ssl: {
-        rejectUnauthorized: false, // AWS RDS 需要 SSL 但不验证证书
-      },
+      // ssl: {
+      //   rejectUnauthorized: false, // 允许自签名证书
+      // }
+      ssl: false, // 本地开发禁用 SSL
     });
     const adapter = new PrismaPg(pool);
 
