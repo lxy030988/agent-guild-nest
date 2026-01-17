@@ -1,193 +1,302 @@
-# DAO 后台开发文档
+# DAO 治理模块 API 文档
 
-本文档说明本仓库 DAO 后台模块的本地开发、配置、架构与常用流程。
+## 概述
 
-## 1) 概览
+DAO 治理模块为平台提供链上治理后台能力，覆盖提案、投票、质押、国库、统计与事件监听等功能。
 
-DAO 后台提供以下能力：
-- 提案管理（创建/查询/同步）
-- 投票与投票记录
-- 质押与投票权计算
-- 国库资产概览（原生币 + ERC20/721/1155）
-- 治理统计与活动
-- 区块链事件索引与实时监听（Viem）
+### 核心功能
 
-核心模块：
-- `src/modules/dao/*`
-- `src/modules/web3/*`
+- 📝 **提案管理**: 创建、查询、同步链上提案
+- 🗳️ **投票系统**: 记录投票与投票历史
+- 🧱 **质押管理**: 质押记录与投票权计算
+- 💰 **国库管理**: 资产统计（原生币、ERC20/721/1155）
+- 📊 **治理统计**: 用户与全局统计数据
+- 🛰️ **事件监听**: 历史索引与实时监听
 
-## 2) 前置条件
+### 技术栈
 
-- Node.js 18+（当前项目使用 Node 22 也可）
-- 本地 PostgreSQL
-- 以太坊 RPC 端点（Sepolia 或 Mainnet）
+- **框架**: NestJS
+- **数据库**: PostgreSQL (Prisma ORM)
+- **区块链**: Viem
+- **认证**: JWT Bearer Token
+- **文档**: Swagger/OpenAPI
 
-## 3) 环境变量
+---
 
-编辑 `.env`，确保至少包含以下配置：
+## 数据模型
 
-```env
-NODE_ENV=development
-PORT=3000
+### Proposal 提案
 
-# 数据库
-DATABASE_URL="postgresql://postgres:postgres@localhost:5432/agent_guild?schema=public"
-
-# 区块链
-CHAIN_ID=11155111
-RPC_URL=https://rpc.sepolia.org
-BLOCKCHAIN_RPC_URL=https://rpc.sepolia.org
-
-# 合约地址
-GOVERNOR_CONTRACT_ADDRESS=0x0000000000000000000000000000000000000000
-TOKEN_CONTRACT_ADDRESS=0x0000000000000000000000000000000000000000
-STAKING_CONTRACT_ADDRESS=0x0000000000000000000000000000000000000000
-TREASURY_ADDRESS=0x0000000000000000000000000000000000000000
-GOVERNANCE_TOKEN_ADDRESS=0x0000000000000000000000000000000000000000
-
-# 索引起始区块
-START_BLOCK=0
-
-# 认证
-JWT_SECRET=your-super-secret-jwt-key-change-in-production
+```typescript
+{
+  id: string;                 // UUID
+  proposalId: string;         // 链上提案 ID（BigInt 字符串）
+  title: string;              // 标题
+  description: string;        // 描述
+  proposer: string;           // 提案者地址
+  status: ProposalStatus;     // 状态
+  startBlock: string;         // 开始区块
+  endBlock: string;           // 结束区块
+  votesFor: string;           // 赞成票
+  votesAgainst: string;       // 反对票
+  votesAbstain: string;       // 弃权票
+  createdAt: Date;
+  updatedAt: Date;
+}
 ```
 
-说明：
-- 公共 Sepolia RPC 容易超时，建议使用更稳定的付费/专用 RPC。
-- 目前代码里使用的是 `RPC_URL`；`BLOCKCHAIN_RPC_URL` 仅文档说明，尚未接入代码。
+### Vote 投票
 
-## 4) 安装与运行
-
-```bash
-pnpm install
-pnpm prisma generate
-pnpm prisma migrate dev
-pnpm start:dev
+```typescript
+{
+  id: string;                 // UUID
+  proposalId: string;         // 提案 ID（UUID）
+  voter: string;              // 投票者地址
+  support: VoteType;          // FOR | AGAINST | ABSTAIN
+  weight: string;             // 投票权重（字符串）
+  reason?: string;            // 原因
+  createdAt: Date;
+}
 ```
 
-访问地址：
-- API 基础地址：`http://localhost:3000/api`
-- DAO 路由：`http://localhost:3000/api/dao`
+### Stake 质押
 
-如果 3000 端口被占用：
-```bash
-PORT=3001 pnpm start:dev
+```typescript
+{
+  id: string;                 // UUID
+  walletAddress: string;      // 质押者地址
+  amount: string;             // 质押数量（字符串）
+  lockPeriod: string;         // 锁定期
+  multiplier: number;         // 权重倍率
+  isActive: boolean;          // 是否有效
+  createdAt: Date;
+  updatedAt: Date;
+}
 ```
 
-## 5) 架构说明
+### Treasury 国库
 
-### Web3 Provider
-`src/modules/web3/web3.provider.ts`
-- 基于 Viem 创建 `publicClient` 和可选的 `walletClient`
-- 通过 `RPC_URL` 与 `CHAIN_ID` 选择链与 RPC
-
-### DAO 业务服务
-`src/modules/dao/*`
-- `proposals.service.ts`：提案 CRUD 与链上同步
-- `voting.service.ts`：投票记录与查询
-- `staking.service.ts`：质押与投票权
-- `treasury.service.ts`：国库资产
-- `governance-stats.service.ts`：统计与活动
-
-### 事件索引与监听
-`src/modules/dao/indexer.service.ts`
-- 历史事件分批索引
-- 由 `START_BLOCK` 与代码内参数控制
-
-`src/modules/dao/event-listener.service.ts`
-- 模块初始化时先历史索引，再启动实时监听
-- 使用 Viem 的 `watchEvent`
-
-## 6) DAO 接口列表
-
-基路径：`/api/dao`
-
-### 提案
-- `GET /proposals`
-- `GET /proposals/:id`
-- `POST /proposals`（需要认证）
-- `POST /proposals/sync/:id`（需要认证）
-- `GET /proposals/:id/votes`
-- `GET /proposals/:id/stats`
-
-### 投票
-- `GET /votes/:walletAddress`
-- `POST /votes`（需要认证）
-- `GET /votes/:walletAddress/history`
-
-### 质押
-- `GET /staking/:walletAddress`
-- `GET /staking/:walletAddress/active`
-- `GET /staking/power/:walletAddress`
-- `GET /staking/:walletAddress/summary`
-
-### 国库
-- `GET /treasury`
-- `GET /treasury/assets`
-- `GET /treasury/assets/:assetType`
-- `GET /treasury/native`
-- `GET /treasury/erc20/:tokenAddress`
-
-### 统计与活动
-- `GET /stats`
-- `GET /stats/:walletAddress`
-- `GET /stats/:walletAddress/participation`
-- `GET /activity`
-- `GET /activity/:walletAddress`
-
-## 7) 事件监听控制
-
-基路径：`/dao`（注意：当前路由不带 `/api`）
-
-```bash
-curl http://localhost:3000/dao/listener/status
-curl -X POST http://localhost:3000/dao/listener/start
-curl -X POST http://localhost:3000/dao/listener/stop
-curl -X POST "http://localhost:3000/dao/indexer/reindex?fromBlock=18500000"
+```typescript
+{
+  id: string;                 // UUID
+  assetType: AssetType;       // NATIVE | ERC20 | ERC721 | ERC1155
+  tokenAddress?: string;      // 资产合约地址
+  symbol?: string;            // 代币符号
+  balance: string;            // 余额
+  updatedAt: Date;
+}
 ```
 
-## 8) 索引参数调优
+### GovernanceStats 统计
 
-`src/modules/dao/indexer.service.ts`：
-- `BATCH_SIZE`：每批区块数
-- `MAX_RETRIES`：重试次数
-- `RETRY_DELAY`：重试间隔
-- `delay(500)`：批次间冷却
+```typescript
+{
+  id: string;                 // UUID
+  walletAddress: string;      // 用户地址
+  proposalsCreated: number;   // 创建提案数
+  totalVotes: number;         // 投票次数
+  votesFor: number;           // 赞成票数
+  votesAgainst: number;       // 反对票数
+  votesAbstain: number;       // 弃权票数
+  currentStaked: string;      // 当前质押
+  totalVotingPower: string;   // 投票权
+}
+```
 
-建议：
-- RPC 慢/限流：减小 `BATCH_SIZE`，增大延迟
-- 专用 RPC：增大 `BATCH_SIZE`，减少延迟
+---
 
-## 9) 常见问题
+## 枚举类型
+
+### ProposalStatus
+
+```typescript
+enum ProposalStatus {
+  PENDING,
+  ACTIVE,
+  CANCELED,
+  DEFEATED,
+  SUCCEEDED,
+  QUEUED,
+  EXPIRED,
+  EXECUTED
+}
+```
+
+### VoteType
+
+```typescript
+enum VoteType {
+  FOR,
+  AGAINST,
+  ABSTAIN
+}
+```
+
+### AssetType
+
+```typescript
+enum AssetType {
+  NATIVE,
+  ERC20,
+  ERC721,
+  ERC1155
+}
+```
+
+---
+
+## API 端点
+
+### 基础信息
+
+- **Base URL**: `http://localhost:3000`
+- **认证方式**: Bearer Token (JWT)
+- **请求格式**: `application/json`
+- **响应格式**: 统一包装
+
+```typescript
+{
+  success: boolean;
+  data: any;
+  timestamp: string;
+  path: string;
+}
+```
+
+---
+
+### 1. 创建提案
+
+**POST** `/api/dao/proposals`
+
+#### 请求
+
+```
+Authorization: Bearer <your_jwt_token>
+Content-Type: application/json
+```
+
+```json
+{
+  "title": "Upgrade DAO Treasury",
+  "description": "Increase treasury allocation for grants",
+  "targets": ["0x..."],
+  "values": ["0"],
+  "calldatas": ["0x..."],
+  "signatures": [""],
+  "proposer": "0xYourAddress"
+}
+```
+
+#### 响应
+
+**Status**: `201 Created`
+
+---
+
+### 2. 获取提案列表
+
+**GET** `/api/dao/proposals`
+
+#### 请求
+
+```
+GET /api/dao/proposals?status=ACTIVE&page=1&limit=10&sortBy=createdAt&order=desc
+```
+
+#### 响应
+
+**Status**: `200 OK`
+
+---
+
+### 3. 记录投票
+
+**POST** `/api/dao/votes`
+
+#### 请求
+
+```
+Authorization: Bearer <your_jwt_token>
+Content-Type: application/json
+```
+
+```json
+{
+  "proposalId": "1",
+  "voter": "0xYourAddress",
+  "support": "FOR",
+  "weight": "1000000000000000000",
+  "reason": "Looks good"
+}
+```
+
+#### 响应
+
+**Status**: `201 Created`
+
+---
+
+### 4. 获取投票权
+
+**GET** `/api/dao/staking/power/:walletAddress`
+
+#### 请求
+
+```
+GET /api/dao/staking/power/0xYourAddress
+```
+
+#### 响应
+
+**Status**: `200 OK`
+
+---
+
+### 5. 国库资产概览
+
+**GET** `/api/dao/treasury`
+
+#### 请求
+
+```
+GET /api/dao/treasury
+```
+
+#### 响应
+
+**Status**: `200 OK`
+
+---
+
+## 事件监听与索引
+
+### 监听状态
+
+**GET** `/dao/listener/status`
+
+### 启动监听
+
+**POST** `/dao/listener/start`
+
+### 停止监听
+
+**POST** `/dao/listener/stop`
+
+### 重新索引
+
+**POST** `/dao/indexer/reindex?fromBlock=<deploy_block>`
+
+---
+
+## 常见问题
 
 ### RPC 超时
-- 表现：Viem 抛出 `TimeoutError`
-- 处理：更换更稳定的 RPC（Alchemy/Infura/QuickNode/PublicNode）
 
-### 端口被占用
-- 表现：`EADDRINUSE :::3000`
-- 处理：结束占用进程，或设置 `PORT=3001`
+- 现象：Viem 抛出 `TimeoutError`
+- 解决：使用更稳定的 RPC（Alchemy/Infura/QuickNode/PublicNode）
 
-### 事件缺失
-- 处理：从部署区块重新索引
-  `POST /dao/indexer/reindex?fromBlock=<deploy_block>`
+### 端口占用
 
-## 10) 主要文件结构
-
-```
-src/modules/web3/
-  web3.module.ts
-  web3.provider.ts
-  contracts.service.ts
-
-src/modules/dao/
-  dao.module.ts
-  dao.controller.ts
-  proposals.service.ts
-  voting.service.ts
-  staking.service.ts
-  treasury.service.ts
-  governance-stats.service.ts
-  indexer.service.ts
-  event-listener.service.ts
-```
+- 现象：`EADDRINUSE :::3000`
+- 解决：结束占用进程或设置 `PORT=3001`
