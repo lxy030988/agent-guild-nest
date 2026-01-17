@@ -10,6 +10,7 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { DashboardService } from './dashboard.service';
 import {
   DashboardStatsDto,
+  DashboardTabCountsDto,
   RevenueChartDataDto,
   JobsBreakdownDto,
   ActivityListResponseDto,
@@ -93,5 +94,16 @@ export class DashboardController {
       +page,
       +limit,
     );
+  }
+
+  @Get('loadTabCounts')
+  @ApiOperation({ summary: '获取Dashboard Tabs统计数据' })
+  @ApiResponse({
+    status: 200,
+    description: '返回Tabs统计数量',
+    type: DashboardTabCountsDto,
+  })
+  async loadTabCounts(@Req() req): Promise<DashboardTabCountsDto> {
+    return this.dashboardService.loadTabCounts(req.user.userId);
   }
 }

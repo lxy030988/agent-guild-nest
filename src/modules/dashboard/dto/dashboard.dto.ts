@@ -1,29 +1,50 @@
 import { ApiProperty } from '@nestjs/swagger';
 
+export class StatWithNoteDto {
+  @ApiProperty({ description: '当前值', example: 12 })
+  value: number | string;
+
+  @ApiProperty({ description: '近一周新增数量', example: 2 })
+  note: number;
+}
+
 /**
  * Dashboard 统计数据 DTO
  */
 export class DashboardStatsDto {
-  @ApiProperty({ description: '已发布Agent数量', example: 5 })
-  publishedAgents: number;
+  @ApiProperty({ description: '已发布Agent数量' })
+  publishedAgents: StatWithNoteDto;
 
   @ApiProperty({
     description: '活跃任务数（OPEN/MATCHED/IN_PROGRESS）',
-    example: 12,
   })
-  activeJobs: number;
+  activeJobs: StatWithNoteDto;
 
-  @ApiProperty({ description: '已完成任务数', example: 8 })
-  completedJobs: number;
+  @ApiProperty({ description: '已完成任务数' })
+  completedJobs: StatWithNoteDto;
 
-  @ApiProperty({ description: '总收益（ETH）', example: '2.5' })
-  totalEarnings: string;
+  @ApiProperty({ description: '总收益（ETH）' })
+  totalEarnings: StatWithNoteDto;
 
-  @ApiProperty({ description: '进行中任务数', example: 3 })
-  inProgressJobs: number;
+  @ApiProperty({ description: '进行中任务数' })
+  inProgressJobs: StatWithNoteDto;
 
-  @ApiProperty({ description: '争议数量', example: 1 })
-  disputes: number;
+  @ApiProperty({ description: '争议数量' })
+  disputes: StatWithNoteDto;
+}
+
+export class DashboardTabCountsDto {
+  @ApiProperty({ description: '我发布的Jobs总数', example: 12 })
+  publishedJobs: number;
+
+  @ApiProperty({ description: '我发布的Agents总数', example: 5 })
+  publishedAgents: number;
+
+  @ApiProperty({ description: 'Signed Agents总数', example: 3 })
+  signedAgents: number;
+
+  @ApiProperty({ description: 'Disputed Agents总数', example: 1 })
+  disputedAgents: number;
 }
 
 /**
@@ -56,6 +77,7 @@ export class JobsBreakdownDto {
   @ApiProperty({ description: '已取消任务数', example: 2 })
   cancelled: number;
 }
+
 
 /**
  * 活动动态项 DTO

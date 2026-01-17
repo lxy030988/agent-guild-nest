@@ -16,18 +16,28 @@ export class DashboardService {
    * 获取用户的Dashboard统计数据
    */
   async getDashboardStats(userId: number): Promise<DashboardStatsDto> {
+    const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
     // 并行查询所有统计数据
     const [
       publishedAgentsCount,
+      publishedAgentsWeek,
       activeJobsCount,
+      activeJobsWeek,
       completedJobsCount,
+      completedJobsWeek,
       inProgressJobsCount,
+      inProgressJobsWeek,
       totalEarnings,
+      earningsWeekCount,
       disputesCount,
+      disputesWeek,
     ] = await Promise.all([
       // 已发布Agent数量
       this.prisma.agent.count({
         where: { ownerId: userId },
+      }),
+      this.prisma.agent.count({
+        where: { ownerId: userId, createdAt: { gte: weekAgo } },
       }),
 
       // 活跃任务数（OPEN + MATCHED + IN_PROGRESS）
@@ -35,6 +45,13 @@ export class DashboardService {
         where: {
           ownerId: userId,
           status: { in: ['OPEN', 'MATCHED', 'IN_PROGRESS'] },
+        },
+      }),
+      this.prisma.job.count({
+        where: {
+          ownerId: userId,
+          status: { in: ['OPEN', 'MATCHED', 'IN_PROGRESS'] },
+          createdAt: { gte: weekAgo },
         },
       }),
 
@@ -45,6 +62,13 @@ export class DashboardService {
           status: 'COMPLETED',
         },
       }),
+      this.prisma.job.count({
+        where: {
+          ownerId: userId,
+          status: 'COMPLETED',
+          createdAt: { gte: weekAgo },
+        },
+      }),
 
       // 进行中任务数
       this.prisma.job.count({
@@ -53,21 +77,61 @@ export class DashboardService {
           status: 'IN_PROGRESS',
         },
       }),
+      this.prisma.job.count({
+        where: {
+          ownerId: userId,
+          status: 'IN_PROGRESS',
+          createdAt: { gte: weekAgo },
+        },
+      }),
 
       // 总收益（从bills表汇总收入类账单）
       this.calculateTotalEarnings(userId),
+      this.prisma.bill.count({
+        where: {
+          userId,
+          type: 'INCOME',
+          isPaid: true,
+          createdAt: { gte: weekAgo },
+        },
+      }),
 
       // 争议数量（暂时返回0，后续可根据实际业务逻辑实现）
       this.getDisputesCount(userId),
+      this.prisma.job.count({
+        where: {
+          ownerId: userId,
+          status: 'DISPUTED',
+          createdAt: { gte: weekAgo },
+        },
+      }),
     ]);
 
     return {
-      publishedAgents: publishedAgentsCount,
-      activeJobs: activeJobsCount,
-      completedJobs: completedJobsCount,
-      totalEarnings: totalEarnings.toString(),
-      inProgressJobs: inProgressJobsCount,
-      disputes: disputesCount,
+      publishedAgents: {
+        value: publishedAgentsCount,
+        note: publishedAgentsWeek,
+      },
+      activeJobs: {
+        value: activeJobsCount,
+        note: activeJobsWeek,
+      },
+      completedJobs: {
+        value: completedJobsCount,
+        note: completedJobsWeek,
+      },
+      totalEarnings: {
+        value: totalEarnings.toString(),
+        note: earningsWeekCount,
+      },
+      inProgressJobs: {
+        value: inProgressJobsCount,
+        note: inProgressJobsWeek,
+      },
+      disputes: {
+        value: disputesCount,
+        note: disputesWeek,
+      },
     };
   }
 
@@ -216,6 +280,41 @@ export class DashboardService {
       total,
       page,
       limit,
+    };
+  }
+
+  /**
+   * 获取Dashboard Tabs统计数据
+   */
+  async loadTabCounts(userId: number) {
+    const [publishedJobs, publishedAgents, signedAgents, disputedAgents] =
+      await Promise.all([
+        this.prisma.job.count({ where: { ownerId: userId } }),
+        this.prisma.agent.count({ where: { ownerId: userId } }),
+        this.prisma.job.groupBy({
+          by: ['assignedAgentId'],
+          where: {
+            ownerId: userId,
+            assignedAgentId: { not: null },
+          },
+          _count: { _all: true },
+        }),
+        this.prisma.job.groupBy({
+          by: ['assignedAgentId'],
+          where: {
+            ownerId: userId,
+            status: 'DISPUTED',
+            assignedAgentId: { not: null },
+          },
+          _count: { _all: true },
+        }),
+      ]);
+
+    return {
+      publishedJobs,
+      publishedAgents,
+      signedAgents: signedAgents.length,
+      disputedAgents: disputedAgents.length,
     };
   }
 

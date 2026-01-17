@@ -53,8 +53,9 @@ export class WalletService {
    * 获取收益统计（三个钱包）
    */
   async getEarnings(userId: number) {
+    const prisma = this.prisma as PrismaService & { transaction: any };
     // Agent 收益
-    const agentEarnings = await this.prisma.transaction.aggregate({
+    const agentEarnings = await prisma.transaction.aggregate({
       where: {
         toUserId: userId,
         type: 'JOB_PAYMENT',
@@ -100,9 +101,10 @@ export class WalletService {
    */
   async getTransactionHistory(userId: number, page = 1, limit = 20) {
     const skip = (page - 1) * limit;
+    const prisma = this.prisma as PrismaService & { transaction: any };
 
     const [items, total] = await Promise.all([
-      this.prisma.transaction.findMany({
+      prisma.transaction.findMany({
         where: {
           OR: [{ fromUserId: userId }, { toUserId: userId }],
         },
@@ -118,7 +120,7 @@ export class WalletService {
           },
         },
       }),
-      this.prisma.transaction.count({
+      prisma.transaction.count({
         where: {
           OR: [{ fromUserId: userId }, { toUserId: userId }],
         },
@@ -147,8 +149,9 @@ export class WalletService {
   async getAssetTrends(userId: number, days = 30) {
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - days);
+    const prisma = this.prisma as PrismaService & { transaction: any };
 
-    const transactions = await this.prisma.transaction.findMany({
+    const transactions = await prisma.transaction.findMany({
       where: {
         toUserId: userId,
         type: 'JOB_PAYMENT',
