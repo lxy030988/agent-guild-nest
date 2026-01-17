@@ -20,6 +20,33 @@ model User {
   updatedAt     DateTime @updatedAt
 
   publishedJobs Job[]    @relation("JobOwner") // 发布的 Jobs
+  agents        Agent[]  // 用户拥有的 Agents
+}
+
+// Agent 主模型
+model Agent {
+  id              Int      @id @default(autoincrement())
+  name            String
+  avatar          String?
+  capabilities    String[]
+  status          String   @default("ACTIVE")
+  healthStatus    String   @default("UNKNOWN")
+  availability    Boolean  @default(true)
+  rating          Float?
+  jobCount        Int      @default(0)
+
+  ownerId         Int
+  owner           User     @relation(fields: [ownerId], references: [id])
+
+  assignedJobs    Job[]    @relation("JobAssigned")
+  jobMatches      JobAgentMatch[]
+  jobApplications JobApplication[]
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([ownerId])
+  @@index([status])
 }
 
 
@@ -61,6 +88,13 @@ enum MatchingMode {
   OPEN_MARKET   // 开放市场（推荐 + 申请）
 }
 
+// Job 申请状态
+enum ApplicationStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+}
+
 // Job 主模型
 model Job {
   id          Int      @id @default(autoincrement())
@@ -99,6 +133,10 @@ model Job {
   // 关联关系
   ownerId     Int
   owner       User     @relation("JobOwner", fields: [ownerId], references: [id])
+  assignedAgentId Int?
+  assignedAgent Agent? @relation("JobAssigned", fields: [assignedAgentId], references: [id])
+  recommendations JobAgentMatch[] @relation("JobRecommendations")
+  applications JobApplication[]
   
   // 执行信息
   startedAt   DateTime?
@@ -117,9 +155,45 @@ model Job {
   updatedAt   DateTime @updatedAt
   
   @@index([ownerId])
+  @@index([assignedAgentId])
   @@index([status])
   @@index([category])
   @@index([createdAt])
 }
 
+// Job-Agent 匹配记录
+model JobAgentMatch {
+  id         Int      @id @default(autoincrement())
+  jobId      Int
+  agentId    Int
+  matchScore Float
+  reason     String
+  createdAt  DateTime @default(now())
 
+  job        Job      @relation("JobRecommendations", fields: [jobId], references: [id])
+  agent      Agent    @relation(fields: [agentId], references: [id])
+
+  @@index([jobId])
+  @@index([agentId])
+  @@unique([jobId, agentId])
+}
+
+// Job 申请记录
+model JobApplication {
+  id            Int      @id @default(autoincrement())
+  jobId         Int
+  agentId       Int
+  message       String?
+  proposedPrice Decimal? @db.Decimal(10, 2)
+  estimatedTime Int?
+  status        ApplicationStatus @default(PENDING)
+  createdAt     DateTime @default(now())
+
+  job           Job      @relation(fields: [jobId], references: [id])
+  agent         Agent    @relation(fields: [agentId], references: [id])
+
+  @@index([jobId])
+  @@index([agentId])
+  @@index([status])
+  @@unique([jobId, agentId])
+}
