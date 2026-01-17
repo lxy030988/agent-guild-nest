@@ -6,6 +6,8 @@ import { AppService } from './app.service';
 import { UsersModule } from './modules/users/users.module';
 import { PostsModule } from './modules/posts/posts.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { DaoModule } from './modules/dao/dao.module';
+import { Web3Module } from './modules/web3/web3.module';
 import { LoggerMiddleware } from './common/middlewares/logger.middleware';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { PrismaModule } from './prisma/prisma.module';
@@ -17,9 +19,11 @@ import { PrismaModule } from './prisma/prisma.module';
       envFilePath: '.env',
     }),
     PrismaModule,
+    Web3Module,
     AuthModule,
     UsersModule,
     PostsModule,
+    DaoModule,
   ],
   controllers: [AppController],
   providers: [

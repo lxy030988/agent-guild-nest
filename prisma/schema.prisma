@@ -32,3 +32,228 @@ model Post {
   authorId  Int
   author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
 }
+
+// ==================== DAO Governance Models ====================
+
+// Enums
+enum ProposalStatus {
+  PENDING
+  ACTIVE
+  CANCELED
+  DEFEATED
+  SUCCEEDED
+  QUEUED
+  EXPIRED
+  EXECUTED
+}
+
+enum VoteType {
+  FOR
+  AGAINST
+  ABSTAIN
+}
+
+enum AssetType {
+  NATIVE
+  ERC20
+  ERC721
+  ERC1155
+}
+
+enum ActivityType {
+  PROPOSAL_CREATED
+  PROPOSAL_CANCELED
+  PROPOSAL_EXECUTED
+  VOTE_CAST
+  STAKE_CREATED
+  STAKE_WITHDRAWN
+  DELEGATION_CHANGED
+}
+
+// Proposal 模型 - DAO 提案
+model Proposal {
+  id                    String                 @id @default(uuid())
+  proposalId            BigInt                 @unique // 链上提案 ID
+  title                 String
+  description           String                 @db.Text
+  proposer              String                 // 提案者钱包地址
+  status                ProposalStatus         @default(PENDING)
+
+  // Vote counts
+  votesFor              BigInt                 @default(0)
+  votesAgainst          BigInt                 @default(0)
+  votesAbstain          BigInt                 @default(0)
+
+  // Blockchain data
+  transactionHash       String
+  blockNumber           BigInt
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+
+  // Voting period
+  startBlock            BigInt
+  endBlock              BigInt
+  startTime             DateTime?
+  endTime               DateTime?
+
+  // Governance parameters
+  quorumReached         Boolean                @default(false)
+  executed              Boolean                @default(false)
+  canceled              Boolean                @default(false)
+  executedAt            DateTime?
+  canceledAt            DateTime?
+  executionTransactionHash String?
+
+  // Relations
+  votes                 Vote[]
+  transactions          ProposalTransaction[]
+
+  @@index([proposer])
+  @@index([status])
+  @@index([createdAt])
+  @@index([endTime])
+}
+
+// Vote 模型 - 投票记录
+model Vote {
+  id                    String                 @id @default(uuid())
+  proposalId            String
+  voter                 String                 // 投票者钱包地址
+  support               VoteType               // 投票类型
+  votingPower           BigInt                 // 投票权重
+  reason                String?                @db.Text
+
+  // Blockchain data
+  transactionHash       String
+  blockNumber           BigInt
+  timestamp             DateTime               @default(now())
+
+  // Relation
+  proposal              Proposal               @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+
+  @@unique([proposalId, voter])
+  @@index([voter])
+  @@index([proposalId])
+  @@index([timestamp])
+}
+
+// ProposalTransaction 模型 - 提案执行的交易
+model ProposalTransaction {
+  id                    String                 @id @default(uuid())
+  proposalId            String
+  target                String                 // 目标合约地址
+  value                 BigInt                 @default(0) // ETH 金额
+  calldata              String                 @db.Text // 调用数据
+  description           String?                @db.Text
+  executed              Boolean                @default(false)
+  executedAt            DateTime?
+  transactionHash       String?
+
+  // Relation
+  proposal              Proposal               @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+
+  @@index([proposalId])
+}
+
+// Stake 模型 - 质押记录
+model Stake {
+  id                    String                 @id @default(uuid())
+  walletAddress         String                 // 质押者钱包地址
+  amount                BigInt                 // 质押数量
+  lockPeriod            Int                    // 锁定期（秒）
+  multiplier            Float                  @default(1.0) // 投票权乘数
+
+  // Timestamps
+  stakedAt              DateTime               @default(now())
+  unlockAt              DateTime               // 解锁时间
+  withdrawnAt           DateTime?
+
+  // Blockchain data
+  transactionHash       String
+  blockNumber           BigInt
+
+  // Withdrawal
+  withdrawn             Boolean                @default(false)
+  withdrawTransactionHash String?
+
+  @@index([walletAddress])
+  @@index([unlockAt])
+  @@index([withdrawn])
+}
+
+// Treasury 模型 - DAO 资金库
+model Treasury {
+  id                    String                 @id @default(uuid())
+  assetType             AssetType
+  tokenAddress          String?                // ERC20/ERC721/ERC1155 地址
+  tokenId               BigInt?                // ERC721/ERC1155 ID
+  balance               BigInt                 @default(0)
+
+  // Metadata
+  symbol                String?
+  name                  String?
+  decimals              Int?
+
+  // Tracking
+  lastUpdated           DateTime               @updatedAt
+  createdAt             DateTime               @default(now())
+
+  @@unique([assetType, tokenAddress, tokenId])
+  @@index([assetType])
+}
+
+// GovernanceStats 模型 - 用户治理统计
+model GovernanceStats {
+  id                    String                 @id @default(uuid())
+  walletAddress         String                 @unique
+
+  // Proposal stats
+  proposalsCreated      Int                    @default(0)
+  proposalsExecuted     Int                    @default(0)
+  proposalsCanceled     Int                    @default(0)
+
+  // Voting stats
+  totalVotes            Int                    @default(0)
+  votesFor              Int                    @default(0)
+  votesAgainst          Int                    @default(0)
+  votesAbstain          Int                    @default(0)
+
+  // Staking stats
+  totalStaked           BigInt                 @default(0)
+  currentStaked         BigInt                 @default(0)
+  totalVotingPower      BigInt                 @default(0)
+
+  // Activity
+  lastActivityAt        DateTime?
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+
+  @@index([totalVotingPower])
+  @@index([lastActivityAt])
+}
+
+// GovernanceActivity 模型 - 治理活动记录
+model GovernanceActivity {
+  id                    String                 @id @default(uuid())
+  activityType          ActivityType
+  walletAddress         String                 // 活动发起者
+
+  // Reference IDs
+  proposalId            String?
+  voteId                String?
+  stakeId               String?
+
+  // Details
+  description           String                 @db.Text
+  metadata              String?                @db.Text // JSON 格式的额外数据
+
+  // Blockchain data
+  transactionHash       String?
+  blockNumber           BigInt?
+  timestamp             DateTime               @default(now())
+
+  @@index([walletAddress])
+  @@index([activityType])
+  @@index([timestamp])
+  @@index([proposalId])
+}
