@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "Job" ALTER COLUMN "chainDeadline" SET DATA TYPE TEXT,
+ALTER COLUMN "chainJobId" SET DATA TYPE TEXT;

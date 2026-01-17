@@ -2,10 +2,14 @@ import { Injectable, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { JobStatus } from '@prisma/client';
 import axios from 'axios';
+import { BillsService } from '../bills/bills.service';
 
 @Injectable()
 export class JobsExecutionService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private billsService: BillsService,
+  ) {}
 
   /**
    * Agent 所有者接受任务
@@ -13,17 +17,31 @@ export class JobsExecutionService {
   async acceptJob(jobId: number, userId: number) {
     const job = await this.prisma.job.findUnique({
       where: { id: jobId },
+      include: { assignedAgent: true },
     });
 
     if (!job) {
       throw new Error(`Job ${jobId} not found`);
     }
 
+    if (!job.assignedAgent) {
+      throw new ForbiddenException('No agent assigned to this job');
+    }
+
+    // 验证是否为 Agent 的所有者
+    const agent = await this.prisma.agent.findUnique({
+      where: { id: job.assignedAgentId! },
+    });
+
+    if (!agent || agent.ownerId !== userId) {
+      throw new ForbiddenException('Only the agent owner can accept this job');
+    }
+
     // 更新状态为 MATCHED
     return this.prisma.job.update({
       where: { id: jobId },
       data: { status: JobStatus.MATCHED },
-      include: { owner: true },
+      include: { assignedAgent: true, owner: true },
     });
   }
 
@@ -34,10 +52,19 @@ export class JobsExecutionService {
     console.log(`[ENTRY] startJob called for Job ${jobId} by User ${userId}`);
     const job = await this.prisma.job.findUnique({
       where: { id: jobId },
+      include: { assignedAgent: true },
     });
 
-    if (!job) {
-      throw new Error('Job not found');
+    if (!job || !job.assignedAgent) {
+      throw new Error('Job or agent not found');
+    }
+
+    const agent = await this.prisma.agent.findUnique({
+      where: { id: job.assignedAgentId! },
+    });
+
+    if (!agent || agent.ownerId !== userId) {
+      throw new ForbiddenException('Only the agent owner can start this job');
     }
 
     if (job.status !== JobStatus.MATCHED) {
@@ -68,26 +95,45 @@ export class JobsExecutionService {
 
       const job = await this.prisma.job.findUnique({
         where: { id: jobId },
+        include: { assignedAgent: true },
       });
 
-      if (!job) {
-        console.error(`[EXECUTION] Job ${jobId} not found`);
-        throw new Error('Job not found');
+      if (!job || !job.assignedAgent) {
+        console.error(`[EXECUTION] Job ${jobId} or assigned agent not found`);
+        throw new Error('Job or assigned agent not found');
       }
 
       console.log(
-        `[EXECUTION] Job ${jobId} - Agent model removed, skipping API call`,
+        `[EXECUTION] Calling Agent ${job.assignedAgent.name} (ID: ${job.assignedAgent.id}) at ${job.assignedAgent.endpointUrl}`,
       );
 
-      // 直接标记为已提交（因为没有agent执行）
+      // 调用 Agent API
+      const result = await this.callAgentEndpoint(
+        job.assignedAgent.endpointUrl,
+        job.inputData,
+        job.assignedAgent.endpointAuthType,
+        job.assignedAgent.secretKey ?? undefined,
+      );
+
+      // 保存结果并更新状态
       await this.prisma.job.update({
         where: { id: jobId },
         data: {
           status: JobStatus.SUBMITTED,
-          resultData: { message: 'Job execution simulated (no agent)' },
+          resultData: result,
           submittedAt: new Date(),
         },
       });
+
+      // 更新 Agent 统计
+      if (job.assignedAgentId) {
+        await this.prisma.agent.update({
+          where: { id: job.assignedAgentId },
+          data: {
+            jobCount: { increment: 1 },
+          },
+        });
+      }
     } catch (error) {
       console.error(`Job ${jobId} execution failed:`, error);
 
@@ -96,6 +142,7 @@ export class JobsExecutionService {
         where: { id: jobId },
         data: {
           status: JobStatus.OPEN,
+          assignedAgentId: null,
         },
       });
     }
@@ -107,10 +154,19 @@ export class JobsExecutionService {
   async submitResult(jobId: number, userId: number, resultData: any) {
     const job = await this.prisma.job.findUnique({
       where: { id: jobId },
+      include: { assignedAgent: true },
     });
 
     if (!job) {
       throw new Error('Job not found');
+    }
+
+    const agent = await this.prisma.agent.findUnique({
+      where: { id: job.assignedAgentId! },
+    });
+
+    if (!agent || agent.ownerId !== userId) {
+      throw new ForbiddenException('Only the agent owner can submit results');
     }
 
     if (job.status !== JobStatus.IN_PROGRESS) {
@@ -162,10 +218,40 @@ export class JobsExecutionService {
         approvedAt: new Date(),
         completedAt: new Date(),
       },
+      include: { assignedAgent: true },
     });
 
-    // Bills功能已移除，不再生成账单
-    console.log(`✅ Job ${jobId} approved (bills feature disabled)`);
+    // 更新 Agent 评分（简单平均）
+    if (rating && job.assignedAgentId) {
+      const agent = await this.prisma.agent.findUnique({
+        where: { id: job.assignedAgentId },
+      });
+
+      if (agent) {
+        const currentRating = agent.rating || 0;
+        const reviewCount = agent.reviewCount || 0;
+        const newRating =
+          (currentRating * reviewCount + rating) / (reviewCount + 1);
+
+        await this.prisma.agent.update({
+          where: { id: job.assignedAgentId },
+          data: {
+            rating: newRating,
+            reviewCount: { increment: 1 },
+          },
+        });
+      }
+    }
+
+    // 自动生成账单
+    try {
+      console.log(`✅ Job ${jobId} approved, generating bills...`);
+      await this.billsService.generateBill(jobId);
+      console.log(`✅ Bills generated for Job ${jobId}`);
+    } catch (billError) {
+      console.error(`Failed to generate bills for Job ${jobId}:`, billError);
+      // 不影响主流程
+    }
 
     return updatedJob;
   }

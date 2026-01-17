@@ -8,6 +8,7 @@ import { Public } from './common/decorators/public.decorator';
 export class AppController {
   constructor(private readonly appService: AppService) {}
 
+  @Public()
   @Get()
   @Public()
   getIndex(@Res() res: Response): void {
@@ -15,7 +16,8 @@ export class AppController {
     res.sendFile(join(__dirname, '..', 'index.html'));
   }
 
-  @Get('api')
+  @Public()
+  @Get('hello')
   getHello(): string {
     return this.appService.getHello();
   }

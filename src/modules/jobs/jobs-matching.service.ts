@@ -23,77 +23,71 @@ export class JobsMatchingService {
     const candidates = await this.prisma.agent.findMany({
       where: {
         status: 'ACTIVE',
-        healthStatus: { in: ['HEALTHY', 'UNKNOWN'] }, // 允许 UNKNOWN 状态，新创建的 Agent 还没有进行健康检查
+        healthStatus: { in: ['HEALTHY', 'UNKNOWN'] },
         availability: true,
         capabilities: {
           hasSome: job.requiredCapabilities,
         },
       },
-      include: {
-        owner: {
-          select: { id: true, walletAddress: true, name: true },
-        },
-      },
     });
 
-    // 2. 计算匹配分数并创建匹配记录
-    const matches: any[] = [];
-
-    for (const agent of candidates) {
-      const score = this.calculateMatchScore(job, agent);
-      const reason = this.generateMatchReason(job, agent, score);
-
-      // 创建或更新匹配记录
-      const match = await this.prisma.jobAgentMatch.upsert({
-        where: {
-          jobId_agentId: {
-            jobId: job.id,
-            agentId: agent.id,
-          },
-        },
-        create: {
-          jobId: job.id,
-          agentId: agent.id,
-          matchScore: score,
-          reason,
-        },
-        update: {
-          matchScore: score,
-          reason,
-        },
-        include: {
-          agent: {
-            include: {
-              owner: {
-                select: { id: true, walletAddress: true, name: true },
-              },
-            },
-          },
-        },
-      });
-
-      matches.push(match);
+    if (candidates.length === 0) {
+      console.log(`[Job ${jobId}] No matching agents found`);
+      return [];
     }
 
-    // 3. 排序并返回 Top 5
-    const sortedMatches = matches.sort(
-      (a: any, b: any) => b.matchScore - a.matchScore,
-    );
-    const topMatches = sortedMatches.slice(0, 5);
+    // 2. 计算所有匹配分数（内存操作，快速）
+    const matchData = candidates.map((agent) => {
+      const score = this.calculateMatchScore(job, agent);
+      return {
+        jobId: job.id,
+        agentId: agent.id,
+        matchScore: score,
+        reason: this.generateMatchReason(job, agent, score),
+      };
+    });
 
-    // 4. 只有 SMART 模式才自动分配最佳匹配的 Agent
+    // 3. 🚀 批量 upsert（单次事务，大幅减少数据库往返）
+    await this.prisma.$transaction(
+      matchData.map((match) =>
+        this.prisma.jobAgentMatch.upsert({
+          where: {
+            jobId_agentId: {
+              jobId: match.jobId,
+              agentId: match.agentId,
+            },
+          },
+          create: match,
+          update: {
+            matchScore: match.matchScore,
+            reason: match.reason,
+          },
+        }),
+      ),
+    );
+
+    console.log(
+      `[Job ${jobId}] Created/updated ${matchData.length} agent matches`,
+    );
+
+    // 4. 排序并获取最佳匹配
+    const sortedMatches = matchData.sort((a, b) => b.matchScore - a.matchScore);
+
+    // 5. 只有 SMART 模式才自动分配最佳 Agent
     if (matchingMode === 'SMART' && sortedMatches.length > 0) {
-      const bestMatch: any = sortedMatches[0];
       await this.prisma.job.update({
         where: { id: jobId },
         data: {
-          assignedAgentId: bestMatch.agentId,
+          assignedAgentId: sortedMatches[0].agentId,
           status: 'MATCHED',
         },
       });
+      console.log(
+        `[Job ${jobId}] Auto-assigned agent ${sortedMatches[0].agentId}`,
+      );
     }
 
-    return topMatches;
+    return sortedMatches.slice(0, 5);
   }
 
   /**
@@ -150,9 +144,11 @@ export class JobsMatchingService {
 
   /**
    * 获取 Job 的推荐 Agents
+   * 如果没有推荐记录，自动生成
    */
   async getRecommendations(jobId: number) {
-    const matches = await this.prisma.jobAgentMatch.findMany({
+    // 1. 先查询现有推荐
+    let matches = await this.prisma.jobAgentMatch.findMany({
       where: { jobId },
       include: {
         agent: {
@@ -166,6 +162,30 @@ export class JobsMatchingService {
       orderBy: { matchScore: 'desc' },
       take: 5,
     });
+
+    // 2. 如果没有推荐记录，生成推荐（但不自动分配）
+    if (matches.length === 0) {
+      console.log(`[Job ${jobId}] No recommendations found, generating...`);
+
+      // 使用 APPLICATION 模式：计算匹配但不自动分配
+      await this.findMatchingAgents(jobId, 'APPLICATION');
+
+      // 重新查询
+      matches = await this.prisma.jobAgentMatch.findMany({
+        where: { jobId },
+        include: {
+          agent: {
+            include: {
+              owner: {
+                select: { id: true, walletAddress: true, name: true },
+              },
+            },
+          },
+        },
+        orderBy: { matchScore: 'desc' },
+        take: 5,
+      });
+    }
 
     return matches;
   }

@@ -5,8 +5,12 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { UsersModule } from './modules/users/users.module';
 import { AuthModule } from './modules/auth/auth.module';
-import { JobsModule } from './modules/jobs/jobs.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
+import { AgentsModule } from './modules/agents/agents.module';
+import { JobsModule } from './modules/jobs/jobs.module'; // 第三阶段
+import { WalletModule } from './modules/wallet/wallet.module'; // 第四阶段
+import { BillsModule } from './modules/bills/bills.module'; // 第四阶段
+import { DisputesModule } from './modules/disputes/disputes.module'; // 第五阶段 - DAO
 import { LoggerMiddleware } from './common/middlewares/logger.middleware';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { PrismaModule } from './prisma/prisma.module';
@@ -22,6 +26,12 @@ import { PrismaModule } from './prisma/prisma.module';
     UsersModule,
     JobsModule,
     DashboardModule,
+    AgentsModule,
+    JobsModule, // 第三阶段
+    WalletModule, // 第四阶段
+    BillsModule, // 第四阶段
+    DisputesModule, // 第五阶段 - DAO
+    DashboardModule, // Dashboard模块
   ],
   controllers: [AppController],
   providers: [
