@@ -36,7 +36,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     }
 
     return {
-      sub: payload.sub,
+      userId: payload.sub, // 映射 sub 到 userId
       walletAddress: payload.walletAddress,
     };
   }
