@@ -19,6 +19,44 @@ model User {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
   posts         Post[]
+  agents        Agent[]
+}
+
+// Agent 模型
+model Agent {
+  id              Int      @id @default(autoincrement())
+  userId          Int
+  title           String
+  description     String
+  category        String
+  subcategory     String?
+  location        Json
+  locationCity    String
+  locationCountry String
+  isRemote        Boolean
+  services        Json
+  pricing         Json
+  availability    Json
+  rating          Float    @default(0)
+  reviewCount     Int      @default(0)
+  completedJobs   Int      @default(0)
+  responseTime    String
+  languages       String[]
+  tags            String[]
+  isActive        Boolean  @default(true)
+  minPrice        Float?
+  maxPrice        Float?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([category])
+  @@index([userId])
+  @@index([isActive])
+  @@index([minPrice])
+  @@index([maxPrice])
+  @@index([rating])
 }
 
 // Post 模型

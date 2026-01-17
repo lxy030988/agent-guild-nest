@@ -39,13 +39,14 @@ async function bootstrap() {
     .addTag('认证', 'Web3 钱包登录与用户认证')
     .addTag('users', '用户管理')
     .addTag('posts', '文章管理')
+    .addTag('agents', 'Agent 资料管理')
     .build();
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api', app, document);
 
-  await app.listen(process.env.PORT ?? 3000);
+  await app.listen(process.env.PORT ?? 4000);
   console.log(
-    `Application is running on: http://localhost:${process.env.PORT ?? 3000}`,
+    `Application is running on: http://localhost:${process.env.PORT ?? 4000}`,
   );
 }
 bootstrap();
