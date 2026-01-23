@@ -62,9 +62,16 @@ export class JobsExecutionService {
     const agent = await this.prisma.agent.findUnique({
       where: { id: job.assignedAgentId! },
     });
+    console.log(`🍎🍎———————— agent ${agent}`);
 
-    if (!agent || agent.ownerId !== userId) {
-      throw new ForbiddenException('Only the agent owner can start this job');
+    if (!agent) {
+      throw new ForbiddenException('Assigned agent not found');
+    }
+
+    if (agent.ownerId !== userId && job.ownerId !== userId) {
+      throw new ForbiddenException(
+        'Only the job owner or agent owner can start this job',
+      );
     }
 
     if (job.status !== JobStatus.MATCHED) {
@@ -137,14 +144,35 @@ export class JobsExecutionService {
     } catch (error) {
       console.error(`Job ${jobId} execution failed:`, error);
 
-      // 标记为失败，重新开放
-      await this.prisma.job.update({
-        where: { id: jobId },
-        data: {
-          status: JobStatus.OPEN,
-          assignedAgentId: null,
-        },
-      });
+      // 记录失败信息，保持当前状态，方便排查与重试
+      try {
+        const current = await this.prisma.job.findUnique({
+          where: { id: jobId },
+          select: { metadata: true },
+        });
+        const base =
+          current?.metadata && typeof current.metadata === 'object'
+            ? current.metadata
+            : {};
+        const lastExecutionError = {
+          message: error instanceof Error ? error.message : String(error),
+          at: new Date().toISOString(),
+        };
+        await this.prisma.job.update({
+          where: { id: jobId },
+          data: {
+            metadata: {
+              ...(base as Record<string, unknown>),
+              lastExecutionError,
+            },
+          },
+        });
+      } catch (updateError) {
+        console.error(
+          `Failed to record execution error for Job ${jobId}:`,
+          updateError,
+        );
+      }
     }
   }
 

@@ -2,7 +2,7 @@ import { createParamDecorator, ExecutionContext } from '@nestjs/common';
 
 /**
  * 自定义装饰器：获取当前用户
- * 使用示例：@CurrentUser() user: User 或 @CurrentUser('sub') userId: number
+ * 使用示例：@CurrentUser() user: User 或 @CurrentUser('userId') userId: number
  */
 export const CurrentUser = createParamDecorator(
   (data: string | undefined, ctx: ExecutionContext) => {

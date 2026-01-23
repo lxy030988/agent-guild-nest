@@ -106,4 +106,26 @@ export class DashboardController {
   async loadTabCounts(@Req() req): Promise<DashboardTabCountsDto> {
     return this.dashboardService.loadTabCounts(req.user.userId);
   }
+
+  @Get('signed-agents')
+  @ApiOperation({ summary: '获取已签署的 Agents' })
+  @ApiQuery({
+    name: 'page',
+    required: false,
+    description: '页码',
+    example: 1,
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    description: '每页数量',
+    example: 20,
+  })
+  async getSignedAgents(
+    @Req() req,
+    @Query('page') page: number = 1,
+    @Query('limit') limit: number = 20,
+  ) {
+    return this.dashboardService.getSignedAgents(req.user.userId, +page, +limit);
+  }
 }

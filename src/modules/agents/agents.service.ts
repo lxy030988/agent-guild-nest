@@ -1,52 +1,116 @@
 import {
+  BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
-  ForbiddenException,
-  BadRequestException,
+  UnauthorizedException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, AgentCategory } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateAgentDto } from './dto/create-agent.dto';
-import { UpdateAgentDto, AgentStatus } from './dto/update-agent.dto';
-import { QueryAgentDto } from './dto/query-agent.dto';
-import { AgentCategory } from './dto/create-agent.dto';
+import { UpdateAgentDto } from './dto/update-agent.dto';
+import { AgentQueryDto } from './dto/agent-query.dto';
+import { PricingDto, ServiceDto } from './dto/agent.dto';
+
+interface PriceRange {
+  minPrice: number | null;
+  maxPrice: number | null;
+}
 
 @Injectable()
 export class AgentsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) {}
 
-  /**
-   * 创建 Agent
-   */
-  async create(userId: number, createAgentDto: CreateAgentDto) {
-    // 生成 Secret Key（如果需要认证）
-    let secretKey: string | undefined;
-    if (
-      createAgentDto.endpointAuthType === 'bearer' ||
-      createAgentDto.endpointAuthType === 'api-key'
-    ) {
-      secretKey = this.generateSecretKey();
+  private toJsonValue(value: unknown): Prisma.InputJsonValue {
+    return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
+  }
+
+  private getJsonArray<T>(value: Prisma.JsonValue | null): T[] {
+    return Array.isArray(value) ? (value as T[]) : [];
+  }
+
+  private getJsonObject(value: Prisma.JsonValue | null): Record<string, unknown> {
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      return value as Record<string, unknown>;
+    }
+    return {};
+  }
+
+  private toAgentCategory(value: string): AgentCategory {
+    const normalized = value.trim().toUpperCase();
+    const categories = AgentCategory;
+    return (Object.values(categories) as string[]).includes(normalized)
+      ? (normalized as AgentCategory)
+      : AgentCategory.OTHERS;
+  }
+
+  private calculatePriceRange(
+    pricing: PricingDto[] = [],
+    services: ServiceDto[] = [],
+  ): PriceRange {
+    const candidates = [
+      ...pricing.map((item) => item.price),
+      ...services.map((item) => item.price),
+    ].filter((value) => typeof value === 'number' && !Number.isNaN(value));
+
+    if (candidates.length === 0) {
+      return { minPrice: null, maxPrice: null };
     }
 
-    const agent = await this.prisma.agent.create({
+    return {
+      minPrice: Math.min(...candidates),
+      maxPrice: Math.max(...candidates),
+    };
+  }
+
+  async create(userId: number, createAgentDto: CreateAgentDto) {
+    if (!userId) {
+      throw new UnauthorizedException('Missing authenticated user');
+    }
+
+    const agentName = createAgentDto.name ?? createAgentDto.title;
+    if (!agentName) {
+      throw new BadRequestException('name or title is required');
+    }
+
+    const priceRange = this.calculatePriceRange(
+      createAgentDto.pricing ?? [],
+      createAgentDto.services ?? [],
+    );
+
+    const capabilitiesFromServices =
+      createAgentDto.services?.map((service) => service.name) ?? [];
+    const capabilities =
+      createAgentDto.capabilities ?? capabilitiesFromServices;
+
+    return this.prisma.agent.create({
       data: {
-        name: createAgentDto.name,
+        owner: {
+          connect: { id: userId },
+        },
+        name: agentName,
         description: createAgentDto.description,
         shortDesc: createAgentDto.shortDesc,
-        avatar: createAgentDto.avatar,
-        category: createAgentDto.category as any,
-        tags: createAgentDto.tags,
-        capabilities: createAgentDto.capabilities || [],
-        configuration: createAgentDto.configuration || Prisma.DbNull,
+        category: this.toAgentCategory(createAgentDto.category),
+        tags: createAgentDto.tags ?? [],
+        status: createAgentDto.isActive === false ? 'PAUSED' : 'ACTIVE',
+        capabilities,
+        availability: createAgentDto.isActive ?? true,
+        minPrice: priceRange.minPrice,
+        maxPrice: priceRange.maxPrice,
         endpointUrl: createAgentDto.endpointUrl,
-        endpointAuthType: createAgentDto.endpointAuthType || 'public',
-        healthCheckUrl: createAgentDto.healthCheckUrl,
-        timeoutMs: createAgentDto.timeoutMs || 30000,
-        secretKey,
-        inputSchema: createAgentDto.inputSchema || Prisma.DbNull,
-        outputSchema: createAgentDto.outputSchema || Prisma.DbNull,
-        status: AgentStatus.ACTIVE, // 强制设为 ACTIVE，确保创建后可见
-        ownerId: userId,
+        endpointAuthType: createAgentDto.endpointAuthType ?? 'public',
+        timeoutMs: createAgentDto.timeoutMs ?? 30000,
+        secretKey: createAgentDto.secretKey ?? undefined,
+        configuration: this.toJsonValue({
+          subcategory: createAgentDto.subcategory,
+          location: createAgentDto.location,
+          services: createAgentDto.services,
+          pricing: createAgentDto.pricing,
+          availability: createAgentDto.availability,
+          responseTime: createAgentDto.responseTime,
+          languages: createAgentDto.languages,
+        }),
       },
       include: {
         owner: {
@@ -54,102 +118,97 @@ export class AgentsService {
             id: true,
             walletAddress: true,
             name: true,
+            email: true,
+            createdAt: true,
+            updatedAt: true,
           },
         },
       },
     });
-
-    // 返回时仅在创建时显示 secretKey 一次
-    return {
-      ...agent,
-      secretKey: secretKey || null, // 仅在响应中包含一次
-    };
   }
 
-  /**
-   * 查询 Agent 列表（支持分页、筛选、排序）
-   */
-  async findAll(query: QueryAgentDto) {
-    const {
-      page = 1,
-      limit = 20,
-      category,
-      tags,
-      search,
-      status = AgentStatus.ACTIVE,
-      sortBy = 'createdAt',
-      order = 'desc',
-      verifiedOnly = false,
-    } = query;
-
+  async findAll(query: AgentQueryDto) {
+    const page = Math.max(1, query.page ?? 1);
+    const limit = Math.min(50, query.limit ?? 20);
     const skip = (page - 1) * limit;
 
-    // 构建查询条件
-    const where: any = {
-      status: status as any,
-    };
+    const filters: Array<Record<string, unknown>> = [];
 
-    if (category) {
-      where.category = category as any;
+    if (query.category) {
+      filters.push({ category: query.category });
     }
 
-    if (tags) {
-      const tagList = tags.split(',').map((t) => t.trim());
-      where.tags = {
-        hasEvery: tagList, // AND 逻辑：包含所有指定标签
-      };
-    }
-
-    if (search) {
-      where.OR = [
-        { name: { contains: search, mode: 'insensitive' } },
-        { description: { contains: search, mode: 'insensitive' } },
-      ];
-    }
-
-    if (verifiedOnly) {
-      where.isVerified = true;
-    }
-
-    // 查询总数和数据
-    const [total, agents] = await Promise.all([
-      this.prisma.agent.count({ where }),
-      this.prisma.agent.findMany({
-        where,
-        skip,
-        take: limit,
-        orderBy: {
-          [sortBy]: order,
-        },
-        include: {
-          owner: {
-            select: {
-              id: true,
-              walletAddress: true,
-              name: true,
+    if (query.location) {
+      filters.push({
+        OR: [
+          {
+            locationCity: {
+              contains: query.location,
+              mode: 'insensitive',
             },
           },
-        },
-      }),
-    ]);
+          {
+            locationCountry: {
+              contains: query.location,
+              mode: 'insensitive',
+            },
+          },
+        ],
+      });
+    }
 
-    // 移除敏感字段
-    const sanitizedAgents = agents.map((agent) => this.sanitizeAgent(agent));
+    if (query.minRating !== undefined) {
+      filters.push({ rating: { gte: query.minRating } });
+    }
 
-    return {
-      data: sanitizedAgents,
-      meta: {
-        total,
-        page,
-        limit,
-        totalPages: Math.ceil(total / limit),
-      },
+    if (query.minPrice !== undefined) {
+      filters.push({ maxPrice: { gte: query.minPrice } });
+    }
+
+    if (query.maxPrice !== undefined) {
+      filters.push({ minPrice: { lte: query.maxPrice } });
+    }
+
+    if (query.search) {
+      filters.push({
+        OR: [
+          { title: { contains: query.search, mode: 'insensitive' } },
+          { description: { contains: query.search, mode: 'insensitive' } },
+          { category: { contains: query.search, mode: 'insensitive' } },
+          { subcategory: { contains: query.search, mode: 'insensitive' } },
+        ],
+      });
+    }
+
+    const sortBy = query.sortBy ?? 'created';
+    const sortOrder = query.order ?? query.sortOrder ?? 'desc';
+    const orderBy =
+      sortBy === 'rating'
+        ? { rating: sortOrder }
+        : sortBy === 'price'
+          ? { minPrice: sortOrder }
+          : sortBy === 'reviews'
+            ? { reviewCount: sortOrder }
+            : sortBy === 'createdAt'
+              ? { createdAt: sortOrder }
+            : { createdAt: sortOrder };
+
+    const where = {
+      status: query.status ?? 'ACTIVE',
+      ...(filters.length > 0 ? { AND: filters } : {}),
     };
+
+    const data = await this.prisma.agent.findMany({
+      where,
+      skip,
+      take: limit,
+      orderBy,
+    });
+    const total = await this.prisma.agent.count({ where });
+
+    return { data, total, page, limit };
   }
 
-  /**
-   * 获取单个 Agent
-   */
   async findOne(id: number) {
     const agent = await this.prisma.agent.findUnique({
       where: { id },
@@ -159,292 +218,205 @@ export class AgentsService {
             id: true,
             walletAddress: true,
             name: true,
+            email: true,
+            createdAt: true,
+            updatedAt: true,
           },
         },
       },
     });
 
     if (!agent) {
-      throw new NotFoundException(`Agent with ID ${id} not found`);
+      throw new NotFoundException(`Agent #${id} not found`);
     }
 
-    // 增加浏览量
-    await this.prisma.agent.update({
-      where: { id },
-      data: { viewCount: { increment: 1 } },
-    });
-
-    return this.sanitizeAgent(agent);
+    return agent;
   }
 
-  /**
-   * 更新 Agent
-   */
+  async findMine(userId: number) {
+    return this.prisma.agent.findMany({
+      where: { ownerId: userId },
+      include: {
+        owner: {
+          select: {
+            id: true,
+            walletAddress: true,
+            name: true,
+            email: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        },
+      },
+    });
+  }
+
   async update(id: number, userId: number, updateAgentDto: UpdateAgentDto) {
-    // 检查 Agent 是否存在和权限
-    const agent = await this.prisma.agent.findUnique({ where: { id } });
-    if (!agent) {
-      throw new NotFoundException(`Agent with ID ${id} not found`);
-    }
-    if (agent.ownerId !== userId) {
-      throw new ForbiddenException('You can only update your own agents');
-    }
-
-    // 更新
-    const updated = await this.prisma.agent.update({
+    const existingAgent = await this.prisma.agent.findUnique({
       where: { id },
-      data: {
-        ...(updateAgentDto.name && { name: updateAgentDto.name }),
-        ...(updateAgentDto.description && {
-          description: updateAgentDto.description,
-        }),
-        ...(updateAgentDto.shortDesc !== undefined && {
-          shortDesc: updateAgentDto.shortDesc,
-        }),
-        ...(updateAgentDto.avatar !== undefined && {
-          avatar: updateAgentDto.avatar,
-        }),
-        ...(updateAgentDto.category && {
-          category: updateAgentDto.category as any,
-        }),
-        ...(updateAgentDto.tags && { tags: updateAgentDto.tags }),
-        ...(updateAgentDto.capabilities && {
-          capabilities: updateAgentDto.capabilities,
-        }),
-        ...(updateAgentDto.configuration !== undefined && {
-          configuration: updateAgentDto.configuration,
-        }),
-        ...(updateAgentDto.endpointUrl && {
-          endpointUrl: updateAgentDto.endpointUrl,
-        }),
-        ...(updateAgentDto.endpointAuthType && {
-          endpointAuthType: updateAgentDto.endpointAuthType,
-        }),
-        ...(updateAgentDto.healthCheckUrl !== undefined && {
-          healthCheckUrl: updateAgentDto.healthCheckUrl,
-        }),
-        ...(updateAgentDto.timeoutMs && {
-          timeoutMs: updateAgentDto.timeoutMs,
-        }),
-        ...(updateAgentDto.inputSchema !== undefined && {
-          inputSchema: updateAgentDto.inputSchema,
-        }),
-        ...(updateAgentDto.outputSchema !== undefined && {
-          outputSchema: updateAgentDto.outputSchema,
-        }),
-        ...(updateAgentDto.status && { status: updateAgentDto.status as any }),
-      },
-      include: {
-        owner: {
-          select: {
-            id: true,
-            walletAddress: true,
-            name: true,
-          },
-        },
-      },
     });
 
-    return this.sanitizeAgent(updated);
-  }
-
-  /**
-   * 删除 Agent
-   */
-  async remove(id: number, userId: number) {
-    // 检查 Agent 是否存在和权限
-    const agent = await this.prisma.agent.findUnique({ where: { id } });
-
-    if (!agent) {
-      throw new NotFoundException(`Agent with ID ${id} not found`);
+    if (!existingAgent) {
+      throw new NotFoundException(`Agent #${id} not found`);
     }
 
-    if (agent.ownerId !== userId) {
-      throw new ForbiddenException('You can only delete your own agents');
+    if (existingAgent.ownerId !== userId) {
+      throw new ForbiddenException('You are not the owner of this agent');
     }
 
-    await this.prisma.agent.delete({ where: { id } });
-
-    return { message: 'Agent deleted successfully' };
-  }
-
-  /**
-   * 获取精选 Agents（按分类分组）
-   */
-  async getFeatured() {
-    const categories = Object.values(AgentCategory);
-    const result: any = {};
-
-    for (const category of categories) {
-      const agents = await this.prisma.agent.findMany({
-        where: {
-          category: category as any,
-          status: 'ACTIVE' as any,
-          isVerified: true,
-        },
-        take: 4, // 每个分类最多 4 个
-        orderBy: {
-          viewCount: 'desc',
-        },
-        include: {
-          owner: {
-            select: {
-              id: true,
-              walletAddress: true,
-              name: true,
-            },
-          },
-        },
-      });
-
-      result[category] = agents.map((agent) => this.sanitizeAgent(agent));
-    }
-
-    return result;
-  }
-
-  /**
-   * 获取热门 Agents
-   */
-  async getPopular(limit: number = 10) {
-    const agents = await this.prisma.agent.findMany({
-      where: {
-        status: 'ACTIVE' as any,
-        isVerified: true,
-      },
-      take: limit,
-      orderBy: {
-        viewCount: 'desc',
-      },
-      include: {
-        owner: {
-          select: {
-            id: true,
-            walletAddress: true,
-            name: true,
-          },
-        },
-      },
-    });
-
-    return agents.map((agent) => this.sanitizeAgent(agent));
-  }
-
-  /**
-   * 获取分类统计
-   */
-  async getCategoryStats() {
-    const categories = Object.values(AgentCategory);
-    const stats: any = {};
-
-    for (const category of categories) {
-      const count = await this.prisma.agent.count({
-        where: {
-          category: category as any,
-          status: 'ACTIVE' as any,
-        },
-      });
-      stats[category] = count;
-    }
-
-    return stats;
-  }
-
-  /**
-   * 获取所有标签列表（去重）
-   */
-  async getAllTags() {
-    const agents = await this.prisma.agent.findMany({
-      where: {
-        status: 'ACTIVE' as any,
-      },
-      select: {
-        tags: true,
-      },
-    });
-
-    // 合并所有标签并去重
-    const allTags = new Set<string>();
-    agents.forEach((agent) => {
-      agent.tags.forEach((tag) => allTags.add(tag));
-    });
-
-    // 转换为数组并排序
-    const uniqueTags = Array.from(allTags).sort();
-
-    return {
-      tags: uniqueTags,
-      total: uniqueTags.length,
+    const data: Record<string, unknown> = {
+      name: updateAgentDto.name ?? updateAgentDto.title,
+      description: updateAgentDto.description,
+      shortDesc: updateAgentDto.shortDesc,
+      category: updateAgentDto.category
+        ? this.toAgentCategory(updateAgentDto.category)
+        : undefined,
+      tags: updateAgentDto.tags,
+      status:
+        updateAgentDto.isActive === undefined
+          ? undefined
+          : updateAgentDto.isActive
+            ? 'ACTIVE'
+            : 'PAUSED',
+      availability: updateAgentDto.isActive,
     };
+
+    const configUpdates: Record<string, unknown> = {};
+
+    if (updateAgentDto.subcategory !== undefined) {
+      configUpdates.subcategory = updateAgentDto.subcategory;
+    }
+
+    if (updateAgentDto.location) {
+      configUpdates.location = updateAgentDto.location;
+    }
+
+    if (updateAgentDto.services) {
+      configUpdates.services = updateAgentDto.services;
+      data.capabilities = updateAgentDto.services.map((service) => service.name);
+    }
+
+    if (updateAgentDto.pricing) {
+      configUpdates.pricing = updateAgentDto.pricing;
+    }
+
+    if (updateAgentDto.endpointUrl !== undefined) {
+      data.endpointUrl = updateAgentDto.endpointUrl;
+    }
+
+    if (updateAgentDto.endpointAuthType !== undefined) {
+      data.endpointAuthType = updateAgentDto.endpointAuthType;
+    }
+
+    if (updateAgentDto.timeoutMs !== undefined) {
+      data.timeoutMs = updateAgentDto.timeoutMs;
+    }
+
+    if (updateAgentDto.secretKey !== undefined) {
+      data.secretKey = updateAgentDto.secretKey;
+    }
+
+    if (updateAgentDto.availability) {
+      configUpdates.availability = updateAgentDto.availability;
+    }
+
+    if (updateAgentDto.responseTime !== undefined) {
+      configUpdates.responseTime = updateAgentDto.responseTime;
+    }
+
+    if (updateAgentDto.languages) {
+      configUpdates.languages = updateAgentDto.languages;
+    }
+
+    if (updateAgentDto.capabilities !== undefined) {
+      data.capabilities = updateAgentDto.capabilities;
+    }
+
+    if (Object.keys(configUpdates).length > 0) {
+      data.configuration = this.toJsonValue({
+        ...this.getJsonObject(existingAgent.configuration),
+        ...configUpdates,
+      });
+    }
+
+    if (updateAgentDto.services || updateAgentDto.pricing) {
+      const nextServices = updateAgentDto.services ?? [];
+      const nextPricing = updateAgentDto.pricing ?? [];
+      const priceRange = this.calculatePriceRange(nextPricing, nextServices);
+      data.minPrice = priceRange.minPrice;
+      data.maxPrice = priceRange.maxPrice;
+    }
+
+    return this.prisma.agent.update({
+      where: { id },
+      data,
+      include: {
+        owner: {
+          select: {
+            id: true,
+            walletAddress: true,
+            name: true,
+            email: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        },
+      },
+    });
   }
 
-  // ============================================
-  // 第三阶段预留方法
-  // ============================================
+  async remove(id: number, userId: number) {
+    const existingAgent = await this.prisma.agent.findUnique({
+      where: { id },
+      select: { id: true, ownerId: true },
+    });
 
-  /**
-   * 获取 Agent 的任务执行能力匹配度
-   * 用于 Jobs 市场的智能匹配算法
-   */
-  async getAgentCapabilityScore(
-    agentId: number,
-    requiredCapabilities: string[],
-  ): Promise<number> {
-    // TODO: 第三阶段实现
-    // 计算能力匹配分数，返回 0-100
-    return 0;
+    if (!existingAgent) {
+      throw new NotFoundException(`Agent #${id} not found`);
+    }
+
+    if (existingAgent.ownerId !== userId) {
+      throw new ForbiddenException('You are not the owner of this agent');
+    }
+
+    await this.prisma.agent.delete({
+      where: { id },
+    });
+
+    return { success: true };
   }
 
-  /**
-   * 批量获取可用 Agents
-   * Jobs 发布时推荐合适的 Agents
-   */
-  async getAvailableAgents(filters: {
-    capabilities: string[];
-    minRating?: number;
-    maxPrice?: number;
-  }): Promise<any[]> {
-    // TODO: 第三阶段实现
-    return [];
+  async getCategoryStats(
+    status: 'DRAFT' | 'ACTIVE' | 'MINTED' | 'PAUSED' | 'ARCHIVED' = 'ACTIVE',
+  ) {
+    const groups = await this.prisma.agent.groupBy({
+      by: ['category'],
+      where: { status },
+      _count: { id: true },
+    });
+
+    return groups.map((item) => ({
+      category: item.category,
+      count: item._count?.id ?? 0,
+    }));
   }
 
-  /**
-   * 更新 Agent 的任务统计
-   * 任务完成后由 Jobs 模块调用
-   */
-  async updateJobStats(
-    agentId: number,
-    jobResult: {
-      success: boolean;
-      earnings: number;
-      rating: number;
-    },
-  ): Promise<void> {
-    // TODO: 第三阶段实现
-    // 更新 jobCount, rating 等字段
-    // 第四阶段：同时调用链上合约更新
-  }
+  async getTags(status: 'DRAFT' | 'ACTIVE' | 'MINTED' | 'PAUSED' | 'ARCHIVED' = 'ACTIVE') {
+    const agents = await this.prisma.agent.findMany({
+      where: { status },
+      select: { tags: true },
+    });
 
-  // ============================================
-  // 私有辅助方法
-  // ============================================
+    const counts = new Map<string, number>();
+    for (const agent of agents) {
+      for (const tag of agent.tags ?? []) {
+        counts.set(tag, (counts.get(tag) ?? 0) + 1);
+      }
+    }
 
-  /**
-   * 生成 Secret Key
-   */
-  private generateSecretKey(): string {
-    const prefix = 'sk_agent_';
-    const randomPart =
-      Math.random().toString(36).substring(2, 15) +
-      Math.random().toString(36).substring(2, 15);
-    return prefix + randomPart;
-  }
-
-  /**
-   * 移除敏感字段（如 secretKey）
-   */
-  private sanitizeAgent(agent: any) {
-    const { secretKey, ...sanitized } = agent;
-    return sanitized;
+    return Array.from(counts.entries()).map(([tag, count]) => ({
+      tag,
+      count,
+    }));
   }
 }

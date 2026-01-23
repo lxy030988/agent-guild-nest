@@ -38,20 +38,15 @@ async function bootstrap() {
     .addBearerAuth() // 添加 JWT Bearer Token 认证
     .addTag('auth', 'Web3 钱包登录与用户认证')
     .addTag('users', '用户管理')
-    .addTag('agents', 'Agent 注册与管理')
-    .addTag('jobs', '任务市场与执行')
-    .addTag('job applications', '任务申请')
-    .addTag('disputes', 'DAO 争议解决与投票')
-    .addTag('wallet', '钱包与资金管理')
-    .addTag('bills', '账单系统')
-    .addTag('dashboard', '数据面板统计')
+    .addTag('posts', '文章管理')
+    .addTag('agents', 'Agent 资料管理')
     .build();
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api', app, document);
 
-  await app.listen(process.env.PORT ?? 3000);
+  await app.listen(process.env.PORT ?? 4000);
   console.log(
-    `Application is running on: http://localhost:${process.env.PORT ?? 3000}`,
+    `Application is running on: http://localhost:${process.env.PORT ?? 4000}`,
   );
 }
 bootstrap();

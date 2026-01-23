@@ -49,7 +49,8 @@ export class AllExceptionsFilter implements ExceptionFilter {
       acceptHeader.includes('application/json') ||
       request.url.startsWith('/api/') ||
       request.url.startsWith('/users') ||
-      request.url.startsWith('/posts');
+      request.url.startsWith('/posts') ||
+      request.url.startsWith('/agents');
 
     if (isApiRequest) {
       // 返回 JSON 响应（API 请求）

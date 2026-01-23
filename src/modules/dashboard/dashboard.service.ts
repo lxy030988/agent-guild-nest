@@ -318,6 +318,51 @@ export class DashboardService {
     };
   }
 
+  async getSignedAgents(userId: number, page: number = 1, limit: number = 20) {
+    const safePage = Math.max(1, page);
+    const safeLimit = Math.min(50, Math.max(1, limit));
+    const skip = (safePage - 1) * safeLimit;
+
+    const where = {
+      ownerId: userId,
+      assignedAgentId: { not: null },
+    };
+
+    const [jobs, signedAgents] = await Promise.all([
+      this.prisma.job.findMany({
+        where,
+        distinct: ['assignedAgentId'],
+        skip,
+        take: safeLimit,
+        orderBy: { updatedAt: 'desc' },
+        include: {
+          assignedAgent: {
+            include: {
+              owner: {
+                select: { id: true, walletAddress: true, name: true },
+              },
+            },
+          },
+        },
+      }),
+      this.prisma.job.groupBy({
+        by: ['assignedAgentId'],
+        where,
+        _count: { _all: true },
+      }),
+    ]);
+
+    return {
+      data: jobs.map((job) => job.assignedAgent).filter(Boolean),
+      meta: {
+        total: signedAgents.length,
+        page: safePage,
+        limit: safeLimit,
+        totalPages: Math.max(1, Math.ceil(signedAgents.length / safeLimit)),
+      },
+    };
+  }
+
   /**
    * 计算总收益
    */
