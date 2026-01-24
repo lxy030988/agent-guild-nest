@@ -47,23 +47,25 @@ export class JobsMatchingService {
       };
     });
 
-    // 3. 🚀 批量 upsert（单次事务，大幅减少数据库往返）
+    // 3. 🚀 批量更新匹配数据（使用 deleteMany + createMany，比单独 upsert 快得多）
     await this.prisma.$transaction(
-      matchData.map((match) =>
-        this.prisma.jobAgentMatch.upsert({
-          where: {
-            jobId_agentId: {
-              jobId: match.jobId,
-              agentId: match.agentId,
-            },
-          },
-          create: match,
-          update: {
-            matchScore: match.matchScore,
-            reason: match.reason,
-          },
-        }),
-      ),
+      async (tx) => {
+        // 先删除该 Job 的所有旧匹配记录
+        await tx.jobAgentMatch.deleteMany({
+          where: { jobId: job.id },
+        });
+
+        // 批量创建新的匹配记录
+        if (matchData.length > 0) {
+          await tx.jobAgentMatch.createMany({
+            data: matchData,
+            skipDuplicates: true,
+          });
+        }
+      },
+      {
+        timeout: 15000, // 增加超时时间到 15 秒
+      },
     );
 
     console.log(
