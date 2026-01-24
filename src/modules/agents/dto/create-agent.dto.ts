@@ -104,7 +104,11 @@ export class CreateAgentDto {
     description: 'Agent API 端点 URL',
     example: 'https://my-agent.vercel.app/api/v1/execute',
   })
-  @IsUrl()
+  @IsUrl({
+    require_tld: false,
+    require_protocol: true,
+    protocols: ['http', 'https'],
+  })
   endpointUrl: string;
 
   @ApiPropertyOptional({

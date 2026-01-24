@@ -89,9 +89,13 @@ export class WalletService {
     });
 
     return {
-      agentEarnings: (agentEarnings._sum.amount || new Prisma.Decimal(0)).toString(),
+      agentEarnings: (
+        agentEarnings._sum.amount || new Prisma.Decimal(0)
+      ).toString(),
       jobEscrow: (jobEscrow._sum.budget || new Prisma.Decimal(0)).toString(),
-      stakingRewards: (stakingRewards._sum.amount || new Prisma.Decimal(0)).toString(),
+      stakingRewards: (
+        stakingRewards._sum.amount || new Prisma.Decimal(0)
+      ).toString(),
     };
   }
 
