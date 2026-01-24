@@ -3,6 +3,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { JobStatus } from '@prisma/client';
 import axios from 'axios';
 import { BillsService } from '../bills/bills.service';
+import jwt from 'jsonwebtoken';
 
 @Injectable()
 export class JobsExecutionService {
@@ -105,6 +106,9 @@ export class JobsExecutionService {
 
       console.log(
         `[EXECUTION] Calling Agent ${job.assignedAgent.name} (ID: ${job.assignedAgent.id}) at ${job.assignedAgent.endpointUrl}`,
+      );
+      console.log(
+        `[EXECUTION] Auth Type: ${job.assignedAgent.endpointAuthType}, SecretKey: ${job.assignedAgent.secretKey ? 'Present' : 'Missing'}`,
       );
 
       // 调用 Agent API
@@ -298,9 +302,34 @@ export class JobsExecutionService {
     const headers: any = { 'Content-Type': 'application/json' };
 
     if (authType === 'bearer' && secretKey) {
-      headers.Authorization = `Bearer ${secretKey}`;
+      // 🔑 关键：使用 secret 生成 JWT token
+      console.log(
+        '[AUTH] Generating JWT token with secretKey:',
+        secretKey ? '***' : 'MISSING',
+      );
+      const token = jwt.sign(
+        {
+          sub: 'agent-guild',
+          role: 'api',
+          iss: 'agent-guild',
+        },
+        secretKey, // 使用存储的 Mastra JWT_AUTH_SECRET
+        {
+          expiresIn: '1h',
+          algorithm: 'HS256', // 明确指定算法
+        },
+      );
+
+      console.log(
+        '[AUTH] Generated JWT token:',
+        token.substring(0, 20) + '...',
+      );
+      headers.Authorization = `Bearer ${token}`; // 使用生成的 token
     } else if (authType === 'api-key' && secretKey) {
+      console.log('[AUTH] Using API Key authentication');
       headers['X-API-Key'] = secretKey;
+    } else {
+      console.log('[AUTH] Using public (no auth) mode');
     }
 
     // 将输入数据转换成 Mastra 格式

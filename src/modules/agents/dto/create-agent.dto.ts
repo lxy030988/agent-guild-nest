@@ -117,6 +117,14 @@ export class CreateAgentDto {
   endpointAuthType?: EndpointAuthType;
 
   @ApiPropertyOptional({
+    description: '认证密钥（用于 bearer 或 api-key 认证类型）',
+    example: 'your-secret-key-here',
+  })
+  @IsOptional()
+  @IsString()
+  secretKey?: string;
+
+  @ApiPropertyOptional({
     description: '健康检查端点 URL',
     example: 'https://my-agent.vercel.app/api/health',
   })

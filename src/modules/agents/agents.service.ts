@@ -19,15 +19,6 @@ export class AgentsService {
    * 创建 Agent
    */
   async create(userId: number, createAgentDto: CreateAgentDto) {
-    // 生成 Secret Key（如果需要认证）
-    let secretKey: string | undefined;
-    if (
-      createAgentDto.endpointAuthType === 'bearer' ||
-      createAgentDto.endpointAuthType === 'api-key'
-    ) {
-      secretKey = this.generateSecretKey();
-    }
-
     const agent = await this.prisma.agent.create({
       data: {
         name: createAgentDto.name,
@@ -42,7 +33,7 @@ export class AgentsService {
         endpointAuthType: createAgentDto.endpointAuthType || 'public',
         healthCheckUrl: createAgentDto.healthCheckUrl,
         timeoutMs: createAgentDto.timeoutMs || 30000,
-        secretKey,
+        secretKey: createAgentDto.secretKey, // 使用前端传来的 secretKey
         inputSchema: createAgentDto.inputSchema || Prisma.DbNull,
         outputSchema: createAgentDto.outputSchema || Prisma.DbNull,
         status: AgentStatus.ACTIVE, // 强制设为 ACTIVE，确保创建后可见
@@ -59,11 +50,8 @@ export class AgentsService {
       },
     });
 
-    // 返回时仅在创建时显示 secretKey 一次
-    return {
-      ...agent,
-      secretKey: secretKey || null, // 仅在响应中包含一次
-    };
+    // 返回时包含所有字段（包括 secretKey）
+    return agent;
   }
 
   /**
@@ -219,6 +207,9 @@ export class AgentsService {
         }),
         ...(updateAgentDto.endpointAuthType && {
           endpointAuthType: updateAgentDto.endpointAuthType,
+        }),
+        ...(updateAgentDto.secretKey !== undefined && {
+          secretKey: updateAgentDto.secretKey,
         }),
         ...(updateAgentDto.healthCheckUrl !== undefined && {
           healthCheckUrl: updateAgentDto.healthCheckUrl,
