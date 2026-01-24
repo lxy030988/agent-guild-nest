@@ -4,8 +4,8 @@
 
 Agent 管理模块提供了完整的 CRUD API，用于管理 AI Agent 的注册、查询、更新和删除。所有 Agent 都存储在 PostgreSQL 数据库中，支持分类、标签、筛选和排序功能。
 
-**版本**: v2.0  
-**基础 URL**: `http://localhost:3000`  
+**版本**: v2.0
+**基础 URL**: `http://localhost:3000`
 **认证方式**: JWT Bearer Token（部分接口需要）
 
 ---

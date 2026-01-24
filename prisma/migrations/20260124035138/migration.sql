@@ -1,0 +1,3 @@
+-- No-op migration.
+-- This migration file was missing and has been restored as a no-op to keep
+-- the migration history consistent.

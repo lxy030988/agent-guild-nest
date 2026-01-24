@@ -19,15 +19,23 @@ export class PrismaService
       throw new Error('DATABASE_URL environment variable is not defined');
     }
 
-    // 从 connection string 解析并移除可能冲突的 SSL 参数
+    // 从 connection string 解析并处理 SSL 参数
     const url = new URL(connectionString);
-    url.searchParams.delete('sslmode'); // 移除 sslmode 参数，我们会通过 Pool 配置 SSL
+    const sslmode = url.searchParams.get('sslmode');
+    url.searchParams.delete('sslmode');
+
+    // 默认对本地数据库禁用 SSL；远程默认启用
+    const isLocal =
+      url.hostname === 'localhost' || url.hostname === '127.0.0.1';
+    const useSSL =
+      sslmode === 'require' ||
+      sslmode === 'verify-full' ||
+      sslmode === 'verify-ca' ||
+      (sslmode === null && !isLocal);
 
     const pool = new Pool({
       connectionString: url.toString(),
-      ssl: {
-        rejectUnauthorized: false, // AWS RDS 需要 SSL 但不验证证书
-      },
+      ssl: useSSL ? { rejectUnauthorized: false } : false,
     });
     const adapter = new PrismaPg(pool);
 

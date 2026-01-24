@@ -21,12 +21,12 @@ model User {
 
   agents        Agent[]  // 拥有的 Agents
   publishedJobs Job[]    @relation("JobOwner") // 发布的 Jobs（第三阶段）
-  
+
   // 第四阶段：Wallet 和 Bills
   transactionsFrom  Transaction[] @relation("TransactionFrom")
   transactionsTo    Transaction[] @relation("TransactionTo")
   bills             Bill[]
-  
+
   // 第五阶段：DAO 争议解决
   createdDisputes   Dispute[]     @relation("DisputeCreator")  // 创建的争议
   votes             Vote[]        // 投票记录
@@ -65,40 +65,40 @@ model Agent {
   category      AgentCategory  @default(OTHERS)
   tags          String[]       // 标签数组
   status        AgentStatus    @default(DRAFT)
-  
+
   // 能力和配置（第二阶段）
   capabilities  String[]       // 能力列表
   configuration Json?          // 配置 JSON
-  
+
   // Agent 端点配置（第二阶段）
   endpointUrl       String        // API 端点 URL
   endpointAuthType  String        @default("public")  // bearer | api-key | public
   healthCheckUrl    String?       // 健康检查端点
   timeoutMs         Int           @default(30000)     // 超时时间（ms）
-  
+
   // 安全（可选，public 类型不需要）
   secretKey         String?       @unique  // 加密存储，仅 bearer/api-key 类型需要
-  
+
   // 规范定义（可选）
   inputSchema       Json?         // JSON Schema
   outputSchema      Json?         // JSON Schema
-  
+
   // 统计信息（第二阶段）
   viewCount     Int            @default(0)
   reviewCount   Int            @default(0)  // 评价数
   jobCount      Int            @default(0)  // 完成的任务数
   rating        Float?         // 评分（1-5）
-  
+
   // 验证状态（第二阶段）
   isVerified        Boolean       @default(false)     // 是否通过验证
   lastHealthCheck   DateTime?     // 最后健康检查时间
   healthStatus      String        @default("UNKNOWN") // HEALTHY | UNHEALTHY | UNKNOWN
-  
+
   // 第三阶段预留字段（Jobs 市场）
   minPrice      Decimal?       @db.Decimal(18, 6)  // 最低价格（USDC）
   maxPrice      Decimal?       @db.Decimal(18, 6)  // 最高价格（USDC）
   availability  Boolean        @default(true)       // 是否可接任务
-  
+
   // 第四阶段预留字段（NFT 和财务）
   tokenId           String?    @unique
   contractAddress   String?
@@ -108,23 +108,23 @@ model Agent {
   revenueShareBps   Int?       // 收益分配基点（10000 = 100%）
   stakedAmount      Decimal?   @default(0) @db.Decimal(18, 6)  // 质押金额
   lastSyncedAt      DateTime?  // 最后同步链上数据时间
-  
+
   // 关联关系
   ownerId       Int
   owner         User           @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-  
+
   // 第三阶段：与 Jobs 的关联
   jobs          Job[]          @relation("AgentJobs")
   matches       JobAgentMatch[] @relation("AgentMatches")
   applications  JobApplication[] @relation("AgentApplications")
-  
+
   // 第五阶段：统计数据
   // dailyStats    AgentDailyStats[]
-  
+
   // 时间戳
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
-  
+
   // 索引
   @@index([category])
   @@index([ownerId])
@@ -175,75 +175,75 @@ enum MatchingMode {
 // Job 主模型
 model Job {
   id          Int      @id @default(autoincrement())
-  
+
   // 基本信息
   title       String
   description String   @db.Text
   category    JobCategory
   tags        String[]
-  
+
   // 需求定义
   requiredCapabilities String[] // 需要的 Agent 能力
   inputData   Json                // 任务输入数据
   expectedOutput String? @db.Text // 期望输出说明
-  
+
   // 财务信息
   budget      Decimal  @db.Decimal(10, 2)
   currency    String   @default("USDC")
   escrowAmount Decimal @db.Decimal(10, 2) // 托管金额（预留第四阶段）
-  
+
   // 时间信息
   deadline    DateTime?
   estimatedDuration Int? // 预计耗时（分钟）
-  
+
   // 状态管理
   status      JobStatus @default(OPEN)
   matchingMode MatchingMode @default(SMART) // 匹配模式
-  
+
   // 智能合约集成（链上字段）
   chainJobId      String?  @unique // 链上任务 ID（字符串存储，避免 BigInt 序列化问题）
   chainTxHash     String?           // 创建任务的交易哈希
   chainDeadline   String?           // 链上截止时间（Unix 时间戳，字符串存储）
   chainStatus     Int?              // 链上状态（用于对账）
   chainBudget     String?           // 链上托管金额（Wei，字符串存储）
-  
+
   // 关联关系
   ownerId     Int
   owner       User     @relation("JobOwner", fields: [ownerId], references: [id])
-  
+
   assignedAgentId Int?
   assignedAgent   Agent? @relation("AgentJobs", fields: [assignedAgentId], references: [id])
-  
+
   // 执行信息
   startedAt   DateTime?
   completedAt DateTime?
   submittedAt DateTime?
   approvedAt  DateTime?
-  
+
   // 结果数据
   resultData  Json?
   feedback    String?  @db.Text
   rating      Int?     // 1-5 星评分
-  
+
   // 关联记录
   recommendations JobAgentMatch[]
   applications    JobApplication[]
-  
+
   // 其他
   metadata    Json?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
-  
+
   @@index([ownerId])
   @@index([assignedAgentId])
   @@index([status])
   @@index([category])
   @@index([createdAt])
-  
+
   // 第四阶段：Wallet 和 Bills
   transactions  Transaction[]
   bills         Bill[]
-  
+
   // 第五阶段：DAO 争议解决
   disputes      Dispute[]
 }
@@ -255,12 +255,12 @@ model JobAgentMatch {
   job         Job    @relation(fields: [jobId], references: [id], onDelete: Cascade)
   agentId     Int
   agent       Agent  @relation("AgentMatches", fields: [agentId], references: [id], onDelete: Cascade)
-  
+
   matchScore  Float  // 匹配分数 0-100
   reason      String // 推荐理由
-  
+
   createdAt   DateTime @default(now())
-  
+
   @@unique([jobId, agentId])
   @@index([jobId])
   @@index([agentId])
@@ -273,14 +273,14 @@ model JobApplication {
   job         Job    @relation(fields: [jobId], references: [id], onDelete: Cascade)
   agentId     Int
   agent       Agent  @relation("AgentApplications", fields: [agentId], references: [id], onDelete: Cascade)
-  
+
   message     String? @db.Text
   proposedPrice Decimal? @db.Decimal(10, 2)
   estimatedTime Int? // 预计完成时间（分钟）
   status      ApplicationStatus @default(PENDING)
-  
+
   createdAt   DateTime @default(now())
-  
+
   @@unique([jobId, agentId])
   @@index([jobId])
   @@index([agentId])
@@ -310,29 +310,29 @@ enum TransactionType {
 // 交易记录
 model Transaction {
   id          Int      @id @default(autoincrement())
-  
+
   type        TransactionType
   amount      Decimal  @db.Decimal(18, 6)
   currency    String   @default("ETH")
-  
+
   // 关联
   fromUserId  Int?
   fromUser    User?    @relation("TransactionFrom", fields: [fromUserId], references: [id])
   toUserId    Int?
   toUser      User?    @relation("TransactionTo", fields: [toUserId], references: [id])
-  
+
   jobId       Int?
   job         Job?     @relation(fields: [jobId], references: [id])
-  
+
   // 链上信息
   txHash      String?  // 交易哈希
   blockNumber String?  // 区块号
-  
+
   description String?  @db.Text
   metadata    Json?
-  
+
   createdAt   DateTime @default(now())
-  
+
   @@index([fromUserId])
   @@index([toUserId])
   @@index([jobId])
@@ -350,28 +350,28 @@ enum BillType {
 // 账单模型
 model Bill {
   id          Int      @id @default(autoincrement())
-  
+
   billNumber  String   @unique  // 账单编号（自动生成）
   type        BillType
   amount      Decimal  @db.Decimal(18, 6)
   currency    String   @default("ETH")
-  
+
   // 关联
   userId      Int
   user        User     @relation(fields: [userId], references: [id])
   jobId       Int?
   job         Job?     @relation(fields: [jobId], references: [id])
-  
+
   // 账单详情
   description String   @db.Text
   details     Json?    // 详细条目
-  
+
   // 状态
   isPaid      Boolean  @default(true)  // 支付状态
   paidAt      DateTime?
-  
+
   createdAt   DateTime @default(now())
-  
+
   @@index([userId])
   @@index([jobId])
   @@index([type])
@@ -400,45 +400,45 @@ enum VoteChoice {
 // 争议模型
 model Dispute {
   id              Int            @id @default(autoincrement())
-  
+
   // 关联任务
   jobId           Int
   job             Job            @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  
+
   // 创建者
   creatorId       Int
   creator         User           @relation("DisputeCreator", fields: [creatorId], references: [id])
-  
+
   // 争议内容
   title           String         // 争议标题
   reason          String         @db.Text
   evidence        String?        @db.Text  // 证据链接或描述
-  
+
   // 状态和时间
   status          DisputeStatus  @default(PENDING)
   votingStartsAt  DateTime?
   votingEndsAt    DateTime?
-  
+
   // 投票统计（冗余字段，用于快速查询）
   approveVotes    Int            @default(0)
   rejectVotes     Int            @default(0)
   abstainVotes    Int            @default(0)
   totalVoteWeight String         @default("0")  // 总投票权重（代币数量字符串）
-  
+
   // 决议结果
   resolution      String?        @db.Text
   resolvedAt      DateTime?
-  
+
   // 链上信息（预留）
   chainDisputeId  String?        @unique
   chainTxHash     String?
-  
+
   // 关联投票
   votes           Vote[]
-  
+
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
-  
+
   @@index([jobId])
   @@index([creatorId])
   @@index([status])
@@ -448,25 +448,25 @@ model Dispute {
 // 投票记录
 model Vote {
   id          Int         @id @default(autoincrement())
-  
+
   // 关联争议
   disputeId   Int
   dispute     Dispute     @relation(fields: [disputeId], references: [id], onDelete: Cascade)
-  
+
   // 投票人
   voterId     Int
   voter       User        @relation(fields: [voterId], references: [id])
-  
+
   // 投票内容
   choice      VoteChoice
   tokenWeight String      @default("0")  // 投票权重（代币数量，字符串存储）
   reason      String?     @db.Text
-  
+
   // 链上信息（预留）
   txHash      String?     // 链上交易哈希
-  
+
   createdAt   DateTime    @default(now())
-  
+
   @@unique([disputeId, voterId])  // 一个用户对一个争议只能投一次票
   @@index([disputeId])
   @@index([voterId])

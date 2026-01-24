@@ -25,9 +25,9 @@ import { UpdateAgentDto } from './dto/update-agent.dto';
 import { QueryAgentDto } from './dto/query-agent.dto';
 import { Agent } from './entities/agent.entity';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
-import { Public } from '../../common/decorators/public.decorator';
 
 @ApiTags('agents')
+@ApiBearerAuth()
 @Controller('agents')
 export class AgentsController {
   constructor(private readonly agentsService: AgentsService) {}
@@ -37,7 +37,6 @@ export class AgentsController {
    */
   @Post()
   @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
   @ApiOperation({ summary: '创建新 Agent' })
   @ApiResponse({ status: 201, description: 'Agent 创建成功', type: Agent })
   @ApiResponse({ status: 401, description: '未认证' })
@@ -46,10 +45,9 @@ export class AgentsController {
   }
 
   /**
-   * 获取 Agent 列表（公开）
+   * 获取 Agent 列表（需认证）
    */
   @Get()
-  @Public()
   @ApiOperation({ summary: '获取 Agent 列表' })
   @ApiResponse({ status: 200, description: 'Agent 列表', type: [Agent] })
   findAll(@Query() query: QueryAgentDto) {
@@ -57,10 +55,9 @@ export class AgentsController {
   }
 
   /**
-   * 获取精选 Agents（公开）
+   * 获取精选 Agents（需认证）
    */
   @Get('featured')
-  @Public()
   @ApiOperation({ summary: '获取精选 Agents（按分类分组）' })
   @ApiResponse({ status: 200, description: '精选 Agents' })
   getFeatured() {
@@ -68,10 +65,9 @@ export class AgentsController {
   }
 
   /**
-   * 获取热门 Agents（公开）
+   * 获取热门 Agents（需认证）
    */
   @Get('popular')
-  @Public()
   @ApiOperation({ summary: '获取热门 Agents' })
   @ApiQuery({ name: 'limit', required: false, type: Number, example: 10 })
   @ApiResponse({ status: 200, description: '热门 Agents', type: [Agent] })
@@ -81,10 +77,9 @@ export class AgentsController {
   }
 
   /**
-   * 获取分类统计（公开）
+   * 获取分类统计（需认证）
    */
   @Get('categories/stats')
-  @Public()
   @ApiOperation({ summary: '获取分类统计' })
   @ApiResponse({ status: 200, description: '分类统计' })
   getCategoryStats() {
@@ -92,10 +87,9 @@ export class AgentsController {
   }
 
   /**
-   * 获取所有标签（公开）
+   * 获取所有标签（需认证）
    */
   @Get('tags')
-  @Public()
   @ApiOperation({ summary: '获取所有标签列表' })
   @ApiResponse({ status: 200, description: '所有标签（去重并排序）' })
   getAllTags() {
@@ -103,10 +97,9 @@ export class AgentsController {
   }
 
   /**
-   * 获取单个 Agent（公开）
+   * 获取单个 Agent（需认证）
    */
   @Get(':id')
-  @Public()
   @ApiOperation({ summary: '获取 Agent 详情' })
   @ApiResponse({ status: 200, description: 'Agent 详情', type: Agent })
   @ApiResponse({ status: 404, description: 'Agent 未找到' })
@@ -119,7 +112,6 @@ export class AgentsController {
    */
   @Put(':id')
   @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
   @ApiOperation({ summary: '更新 Agent' })
   @ApiResponse({ status: 200, description: 'Agent 更新成功', type: Agent })
   @ApiResponse({ status: 401, description: '未认证' })
@@ -138,7 +130,6 @@ export class AgentsController {
    */
   @Delete(':id')
   @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
   @ApiOperation({ summary: '删除 Agent' })
   @ApiResponse({ status: 200, description: 'Agent 删除成功' })
   @ApiResponse({ status: 401, description: '未认证' })

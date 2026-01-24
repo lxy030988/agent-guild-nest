@@ -1,4 +1,4 @@
-import { Controller, Get, Res, NotFoundException } from '@nestjs/common';
+import { Controller, Get, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import { join } from 'path';
 import { AppService } from './app.service';

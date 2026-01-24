@@ -1,0 +1,3 @@
+-- Deprecated migration.
+-- This migration previously created the Agent table with an outdated schema.
+-- It is intentionally left as a no-op to avoid conflicts with later migrations.
