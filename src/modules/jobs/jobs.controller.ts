@@ -9,6 +9,8 @@ import {
   Query,
   UseGuards,
   ParseIntPipe,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { JobsService } from './jobs.service';
@@ -17,6 +19,7 @@ import { CreateJobDto } from './dto/create-job.dto';
 import { UpdateJobDto } from './dto/update-job.dto';
 import { QueryJobDto } from './dto/query-job.dto';
 import { JobsExecutionService } from './jobs-execution.service';
+import { JobsCompetitionService } from './jobs-competition.service'; // 🆕
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
@@ -28,6 +31,8 @@ export class JobsController {
     private readonly jobsService: JobsService,
     private readonly matchingService: JobsMatchingService,
     private readonly executionService: JobsExecutionService,
+    @Inject(forwardRef(() => JobsCompetitionService)) // 🆕 使用 forwardRef
+    private readonly competitionService: JobsCompetitionService,
   ) {}
 
   /**
@@ -42,9 +47,23 @@ export class JobsController {
 
     const matchingMode = dto.matchingMode || 'SMART';
 
-    // 只有 SMART 模式才异步执行匹配并自动分配最佳 Agent
-    // 其他模式的推荐会在用户访问详情页时按需生成（通过 /jobs/:id/recommendations）
-    if (matchingMode === 'SMART') {
+    // 🆕 竞价模式：自动触发匹配并启动执行
+    if (dto.competitionMode) {
+      // 异步执行，不阻塞响应
+      this.matchingService
+        .findMatchingAgents(job.id, 'SMART')
+        .then(() => {
+          console.log(
+            `[Job ${job.id}] Matching complete, starting competition...`,
+          );
+          return this.executionService.startCompetition(job.id, user.userId);
+        })
+        .catch((err) => {
+          console.error(`[Job ${job.id}] Auto-competition start failed:`, err);
+        });
+    }
+    // SMART 模式（非竞价）：自动触发匹配
+    else if (matchingMode === 'SMART') {
       // 异步执行，不阻塞响应
       this.matchingService.findMatchingAgents(job.id, 'SMART').catch((err) => {
         console.error(`[Job ${job.id}] Auto-matching failed:`, err);
@@ -228,5 +247,69 @@ export class JobsController {
     @Body() body: { agentId: number },
   ) {
     return this.matchingService.assignAgent(id, body.agentId, user.userId);
+  }
+
+  /**
+   * 🆕 启动竞价执行
+   */
+  @Post(':id/competition/start')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: '启动竞价执行（并行）' })
+  startCompetition(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: any,
+  ) {
+    return this.executionService.startCompetition(id, user.userId);
+  }
+
+  /**
+   * 🆕 获取竞价结果
+   */
+  @Get(':id/competition/results')
+  @Public()
+  @ApiOperation({ summary: '获取竞价执行结果' })
+  getCompetitionResults(@Param('id', ParseIntPipe) id: number) {
+    return this.competitionService.getCompetitionResults(id);
+  }
+
+  /**
+   * 🆕 评分执行结果
+   */
+  @Post(':id/executions/:executionId/score')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: '评分执行结果' })
+  scoreExecution(
+    @Param('id', ParseIntPipe) id: number,
+    @Param('executionId', ParseIntPipe) executionId: number,
+    @CurrentUser() user: any,
+    @Body() dto: { score: number; reason?: string },
+  ) {
+    return this.competitionService.manualScoreExecution(
+      executionId,
+      user.userId,
+      dto.score,
+      dto.reason,
+    );
+  }
+
+  /**
+   * 🆕 选择胜出者
+   */
+  @Post(':id/competition/select-winner')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: '选择竞价胜出者' })
+  selectWinner(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: any,
+    @Body() dto: { executionId: number },
+  ) {
+    return this.competitionService.selectWinner(
+      id,
+      dto.executionId,
+      user.userId,
+    );
   }
 }

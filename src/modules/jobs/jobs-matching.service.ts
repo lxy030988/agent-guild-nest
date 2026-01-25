@@ -75,7 +75,27 @@ export class JobsMatchingService {
     // 4. 排序并获取最佳匹配
     const sortedMatches = matchData.sort((a, b) => b.matchScore - a.matchScore);
 
-    // 5. 只有 SMART 模式才自动分配最佳 Agent
+    // 🆕 5. 竞价模式：选择 Top N 个 Agent 并创建执行记录
+    if (job.competitionMode) {
+      const topAgents = sortedMatches.slice(0, job.competitorCount);
+
+      // 创建执行记录
+      await this.prisma.jobExecution.createMany({
+        data: topAgents.map((match) => ({
+          jobId: job.id,
+          agentId: match.agentId,
+          status: 'PENDING',
+        })),
+        skipDuplicates: true,
+      });
+
+      console.log(
+        `[Competition] Assigned ${topAgents.length} agents to Job ${jobId}`,
+      );
+      return topAgents;
+    }
+
+    // 5. 原逻辑：只有 SMART 模式才自动分配最佳 Agent
     if (matchingMode === 'SMART' && sortedMatches.length > 0) {
       await this.prisma.job.update({
         where: { id: jobId },

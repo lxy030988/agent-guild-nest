@@ -1,8 +1,14 @@
-import { Injectable, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  ForbiddenException,
+  Inject,
+  forwardRef,
+} from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { JobStatus } from '@prisma/client';
 import axios from 'axios';
 import { BillsService } from '../bills/bills.service';
+import { JobsCompetitionService } from './jobs-competition.service'; // 🆕 导入
 import jwt from 'jsonwebtoken';
 
 @Injectable()
@@ -10,6 +16,8 @@ export class JobsExecutionService {
   constructor(
     private prisma: PrismaService,
     private billsService: BillsService,
+    @Inject(forwardRef(() => JobsCompetitionService)) // 🆕 使用 forwardRef 解决循环依赖
+    private competitionService: JobsCompetitionService,
   ) {}
 
   /**
@@ -85,6 +93,123 @@ export class JobsExecutionService {
     this.executeJobAsync(jobId);
 
     return { message: 'Job execution started' };
+  }
+
+  /**
+   * 🆕 启动竞价执行（并行）
+   */
+  async startCompetition(jobId: number, userId: number) {
+    const job = await this.prisma.job.findUnique({
+      where: { id: jobId },
+      include: { executions: { include: { agent: true } } },
+    });
+
+    if (!job || job.ownerId !== userId) {
+      throw new ForbiddenException('Unauthorized');
+    }
+
+    if (!job.competitionMode) {
+      throw new Error('Job is not in competition mode');
+    }
+
+    if (job.executions.length === 0) {
+      throw new Error('No agents assigned for competition');
+    }
+
+    // 更新状态
+    await this.prisma.job.update({
+      where: { id: jobId },
+      data: { status: JobStatus.IN_PROGRESS, startedAt: new Date() },
+    });
+
+    console.log(
+      `[Competition] Starting parallel execution for Job ${jobId} with ${job.executions.length} agents`,
+    );
+
+    // 🚀 并行执行所有 Agent
+    const executionPromises = job.executions.map((execution) =>
+      this.executeAgentAsync(execution.id),
+    );
+
+    // 不等待完成，异步执行
+    Promise.allSettled(executionPromises).then((results) => {
+      const succeeded = results.filter((r) => r.status === 'fulfilled').length;
+      console.log(
+        `[Competition] Job ${jobId} execution completed: ${succeeded}/${results.length} succeeded`,
+      );
+
+      // 自动评分所有成功的执行
+      if (this.competitionService) {
+        job.executions.forEach((ex) => {
+          this.competitionService.autoScoreExecution(ex.id).catch((err) => {
+            console.error(`Auto-score failed for execution ${ex.id}:`, err);
+          });
+        });
+      }
+    });
+
+    return {
+      message: 'Competition started',
+      executionCount: job.executions.length,
+    };
+  }
+
+  /**
+   * 🆕 执行单个 Agent（用于竞价）
+   */
+  private async executeAgentAsync(executionId: number) {
+    try {
+      const execution = await this.prisma.jobExecution.findUnique({
+        where: { id: executionId },
+        include: { agent: true, job: true },
+      });
+
+      if (!execution) {
+        console.error(`[Execution ${executionId}] Not found`);
+        return;
+      }
+
+      console.log(
+        `[Execution ${executionId}] Starting Agent ${execution.agent.name}`,
+      );
+
+      // 更新状态
+      await this.prisma.jobExecution.update({
+        where: { id: executionId },
+        data: { status: 'IN_PROGRESS', startedAt: new Date() },
+      });
+
+      // 调用 Agent
+      const result = await this.callAgentEndpoint(
+        execution.agent.endpointUrl,
+        execution.job.inputData,
+        execution.agent.endpointAuthType,
+        execution.agent.secretKey ?? undefined,
+      );
+
+      // 保存结果
+      await this.prisma.jobExecution.update({
+        where: { id: executionId },
+        data: {
+          status: 'SUBMITTED',
+          resultData: result,
+          submittedAt: new Date(),
+          completedAt: new Date(),
+        },
+      });
+
+      console.log(`✅ Execution ${executionId} completed successfully`);
+    } catch (error) {
+      console.error(`❌ Execution ${executionId} failed:`, error);
+
+      await this.prisma.jobExecution.update({
+        where: { id: executionId },
+        data: {
+          status: 'FAILED',
+          errorMessage: error.message,
+        },
+      });
+    }
   }
 
   /**
@@ -250,6 +375,12 @@ export class JobsExecutionService {
     // 自动生成账单
     try {
       console.log(`✅ Job ${jobId} approved, generating bills...`);
+
+      // 🆕 竞价模式：完成竞价统计
+      if (job.competitionMode && this.competitionService) {
+        await this.competitionService.finalizeCompetition(jobId);
+      }
+
       await this.billsService.generateBill(jobId);
       console.log(`✅ Bills generated for Job ${jobId}`);
     } catch (billError) {

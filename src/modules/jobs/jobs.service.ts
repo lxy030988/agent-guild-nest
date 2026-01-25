@@ -34,6 +34,9 @@ export class JobsService {
         estimatedDuration: dto.estimatedDuration || null,
         matchingMode: dto.matchingMode || 'SMART',
         ownerId: userId,
+        // 🆕 竞价模式字段
+        competitionMode: dto.competitionMode || false,
+        competitorCount: dto.competitorCount || 3,
         // 链上字段
         chainJobId: dto.chainJobId || null,
         chainTxHash: dto.chainTxHash || null,

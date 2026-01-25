@@ -8,6 +8,7 @@ import {
   IsOptional,
   IsObject,
   Min,
+  Max,
   IsDateString,
 } from 'class-validator';
 
@@ -121,4 +122,24 @@ export class CreateJobDto {
   @IsString()
   @IsOptional()
   chainDeadline?: string;
+
+  // 🆕 竞价模式字段
+  @ApiPropertyOptional({
+    example: false,
+    default: false,
+    description: '是否启用竞价模式（多 Agent 并行执行）',
+  })
+  @IsOptional()
+  competitionMode?: boolean;
+
+  @ApiPropertyOptional({
+    example: 3,
+    default: 3,
+    description: '竞争 Agent 数量（2-5）',
+  })
+  @IsNumber()
+  @Min(2)
+  @Max(5)
+  @IsOptional()
+  competitorCount?: number;
 }

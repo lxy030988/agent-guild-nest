@@ -118,6 +118,12 @@ model Agent {
   matches       JobAgentMatch[] @relation("AgentMatches")
   applications  JobApplication[] @relation("AgentApplications")
   
+  // 🆕 竞价统计
+  executions         JobExecution[] @relation("AgentExecutions")
+  competitionsWon    Int            @default(0)  // 竞价胜出次数
+  competitionsTotal  Int            @default(0)  // 参与竞价总次数
+  winRate            Float?                      // 胜率（自动计算）
+  
   // 第五阶段：统计数据
   // dailyStats    AgentDailyStats[]
   
@@ -214,6 +220,17 @@ model Job {
   assignedAgentId Int?
   assignedAgent   Agent? @relation("AgentJobs", fields: [assignedAgentId], references: [id])
   
+  // 🆕 竞价模式字段
+  competitionMode    Boolean  @default(false)        // 是否启用竞价模式
+  competitorCount    Int      @default(3)            // 竞争 Agent 数量（2-5）
+  
+  // 🆕 多个执行记录
+  executions         JobExecution[]                  // 所有参与竞价的 Agent 执行记录
+  
+  // 🆕 胜出者信息
+  winnerExecutionId  Int?                            // 胜出的执行记录 ID
+  winnerExecution    JobExecution? @relation("WinnerExecution", fields: [winnerExecutionId], references: [id])
+  
   // 执行信息
   startedAt   DateTime?
   completedAt DateTime?
@@ -292,6 +309,71 @@ enum ApplicationStatus {
   PENDING
   ACCEPTED
   REJECTED
+}
+
+// ============================================
+// 竞价执行模块
+// ============================================
+
+// Agent 执行状态
+enum ExecutionStatus {
+  PENDING           // 等待执行
+  IN_PROGRESS       // 执行中
+  SUBMITTED         // 已提交结果
+  COMPLETED         // 已完成（评分完成）
+  FAILED            // 执行失败
+  CANCELLED         // 已取消
+}
+
+// Agent 执行记录（竞价模式）
+model JobExecution {
+  id                 Int           @id @default(autoincrement())
+  
+  // 关联
+  jobId              Int
+  job                Job           @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  
+  agentId            Int
+  agent              Agent         @relation("AgentExecutions", fields: [agentId], references: [id])
+  
+  // 执行状态
+  status             ExecutionStatus @default(PENDING)
+  
+  // 执行时间
+  startedAt          DateTime?
+  submittedAt        DateTime?
+  completedAt        DateTime?
+  
+  // 执行结果
+  resultData         Json?
+  errorMessage       String?       @db.Text
+  
+  // 评分信息
+  qualityScore       Float?        // 质量评分 (0-100)
+  autoScore          Float?        // 自动评分（AI/规则）
+  manualScore        Float?        // 人工评分
+  scoringReason      String?       @db.Text
+  
+  // 是否胜出
+  isWinner           Boolean       @default(false)
+  
+  // 链上信息（如果需要）
+  chainTxHash        String?
+  
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+  
+  // 反向关联：作为获胜者
+  wonJobs            Job[]         @relation("WinnerExecution")
+  
+  // 反向关联：争议
+  disputes           Dispute[]
+  
+  @@unique([jobId, agentId])
+  @@index([jobId])
+  @@index([agentId])
+  @@index([status])
+  @@index([isWinner])
 }
 
 // ============================================
@@ -404,6 +486,10 @@ model Dispute {
   // 关联任务
   jobId           Int
   job             Job            @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  
+  // 🆕 竞价模式：针对的执行记录
+  executionId     Int?                            // 针对的执行记录 ID（竞价模式）
+  execution       JobExecution?  @relation(fields: [executionId], references: [id])
   
   // 创建者
   creatorId       Int

@@ -109,11 +109,32 @@ export class BillsService {
         assignedAgent: {
           include: { owner: true },
         },
+        // 🆕 竞价模式：胜出者execution
+        winnerExecution: {
+          include: {
+            agent: { include: { owner: true } },
+          },
+        },
       },
     });
 
-    if (!job || !job.assignedAgent) {
-      throw new NotFoundException('Job or agent not found');
+    if (!job) {
+      throw new NotFoundException('Job not found');
+    }
+
+    // 🆕 确定支付对象
+    let agentUser;
+    let agentName;
+    if (job.competitionMode && job.winnerExecution) {
+      // 竞价模式：支付给胜出 Agent
+      agentUser = job.winnerExecution.agent.owner;
+      agentName = job.winnerExecution.agent.name;
+    } else if (job.assignedAgent) {
+      // 普通模式：支付给分配的 Agent
+      agentUser = job.assignedAgent.owner;
+      agentName = job.assignedAgent.name;
+    } else {
+      throw new NotFoundException('No agent to pay');
     }
 
     const timestamp = Date.now();
@@ -127,13 +148,15 @@ export class BillsService {
         type: 'INCOME',
         amount: agentPayment,
         currency: 'ETH',
-        userId: job.assignedAgent.ownerId,
+        userId: agentUser.id,
         jobId: job.id,
         description: `Agent task earnings: ${job.title}`,
         details: {
           budget: job.budget.toString(),
           platformFee: platformFee.toString(),
           actualIncome: agentPayment.toString(),
+          competitionMode: job.competitionMode,
+          agentName,
         },
         isPaid: true,
         paidAt: new Date(),
@@ -147,13 +170,14 @@ export class BillsService {
         amount: agentPayment,
         currency: 'ETH',
         fromUserId: job.ownerId,
-        toUserId: job.assignedAgent.ownerId,
+        toUserId: agentUser.id,
         jobId: job.id,
         txHash: job.chainTxHash, // 链上交易哈希
         description: `Payment for job: ${job.title}`,
         metadata: {
           budget: job.budget.toString(),
           platformFee: platformFee.toString(),
+          competitionMode: job.competitionMode,
         },
       },
     });
@@ -172,6 +196,8 @@ export class BillsService {
           totalAmount: job.budget.toString(),
           agentPayment: agentPayment.toString(),
           platformFee: platformFee.toString(),
+          competitionMode: job.competitionMode,
+          agentName,
         },
         isPaid: true,
         paidAt: new Date(),
