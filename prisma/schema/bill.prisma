@@ -1,0 +1,41 @@
+// ============================================
+// Wallet 和 Bills 模块（第四阶段）
+// ============================================
+
+// 账单类型
+enum BillType {
+  INCOME        // 收入账单（Agent 收到的）
+  EXPENSE       // 支出账单（Job Owner 支付的）
+  PLATFORM_FEE  // 平台费用账单
+}
+
+// 账单模型
+model Bill {
+  id          Int      @id @default(autoincrement())
+  
+  billNumber  String   @unique  // 账单编号（自动生成）
+  type        BillType
+  amount      Decimal  @db.Decimal(18, 6)
+  currency    String   @default("ETH")
+  
+  // 关联
+  userId      Int
+  user        User     @relation(fields: [userId], references: [id])
+  jobId       Int?
+  job         Job?     @relation(fields: [jobId], references: [id])
+  
+  // 账单详情
+  description String   @db.Text
+  details     Json?    // 详细条目
+  
+  // 状态
+  isPaid      Boolean  @default(true)  // 支付状态
+  paidAt      DateTime?
+  
+  createdAt   DateTime @default(now())
+  
+  @@index([userId])
+  @@index([jobId])
+  @@index([type])
+  @@index([createdAt])
+}

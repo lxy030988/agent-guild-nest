@@ -12,4 +12,5 @@ tsconfig.build.json
 nest-cli.json
 eslint.config.mjs
 .prettierrc
+*.log
 

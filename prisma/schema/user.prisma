@@ -1,0 +1,22 @@
+// User 模型 - 支持 Web3 登录
+model User {
+  id            Int      @id @default(autoincrement())
+  walletAddress String   @unique // 钱包地址（主要登录凭证）
+  email         String?  // 可选邮箱
+  name          String?  // 用户名
+  nonce         String?  // 用于签名验证的随机数
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  agents        Agent[]  // 拥有的 Agents
+  publishedJobs Job[]    @relation("JobOwner") // 发布的 Jobs（第三阶段）
+  
+  // 第四阶段：Wallet 和 Bills
+  transactionsFrom  Transaction[] @relation("TransactionFrom")
+  transactionsTo    Transaction[] @relation("TransactionTo")
+  bills             Bill[]
+  
+  // 第五阶段：DAO 争议解决
+  createdDisputes   Dispute[]     @relation("DisputeCreator")  // 创建的争议
+  votes             Vote[]        // 投票记录
+}

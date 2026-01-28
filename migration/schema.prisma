@@ -1,14 +1,15 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
+// Prisma 5.x Migration Schema
+// 专门用于迁移函数，使用传统的 url 配置方式
 
 generator client {
   provider = "prisma-client-js"
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
 }
 
 datasource db {
   provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
-
 // User 模型 - 支持 Web3 登录
 model User {
   id            Int      @id @default(autoincrement())

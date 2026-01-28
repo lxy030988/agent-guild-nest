@@ -2,11 +2,15 @@ version = 0.1
 [default]
 [default.deploy]
 [default.deploy.parameters]
-stack_name = "agent-guild-nest-stack"
-region = "us-east-1"
-confirm_changeset = false
+stack_name = "agent-guild-nest1"
+confirm_changeset = true
 capabilities = "CAPABILITY_IAM"
-disable_rollback = false
-parameter_overrides = "Environment=\"production\""
+disable_rollback = true
+parameter_overrides = "Environment=\"production\" AvailabilityZones=\"us-east-1a,us-east-1b,us-east-1c\" DBPassword=\"Postgres123\""
 image_repositories = []
+resolve_s3 = true
+s3_prefix = "agent-guild-nest1"
 
+
+[default.global.parameters]
+region = "us-east-1"

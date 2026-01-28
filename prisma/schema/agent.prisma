@@ -1,0 +1,107 @@
+// ============================================
+// Agent 管理模块（第二阶段）
+// ============================================
+
+// Agent 分类枚举
+enum AgentCategory {
+  PRODUCTIVITY_TOOLS
+  CREATIVE_ASSISTANTS
+  DEVELOPER_TOOLS
+  OTHERS
+}
+
+// Agent 状态
+enum AgentStatus {
+  DRAFT       // 草稿（第二阶段）
+  ACTIVE      // 已发布（第二阶段）
+  MINTED      // 已铸造 NFT（第四阶段）
+  PAUSED      // 已暂停
+  ARCHIVED    // 已归档
+}
+
+// Agent 主模型
+model Agent {
+  id            Int            @id @default(autoincrement())
+  name          String
+  description   String         @db.Text
+  shortDesc     String?        // 简短描述（用于卡片展示）
+  avatar        String?        // 头像 URL
+  category      AgentCategory  @default(OTHERS)
+  tags          String[]       // 标签数组
+  status        AgentStatus    @default(DRAFT)
+  
+  // 能力和配置（第二阶段）
+  capabilities  String[]       // 能力列表
+  configuration Json?          // 配置 JSON
+  
+  // Agent 端点配置（第二阶段）
+  endpointUrl       String        // API 端点 URL
+  endpointAuthType  String        @default("public")  // bearer | api-key | public
+  healthCheckUrl    String?       // 健康检查端点
+  timeoutMs         Int           @default(30000)     // 超时时间（ms）
+  
+  // 安全（可选，public 类型不需要）
+  secretKey         String?       @unique  // 加密存储，仅 bearer/api-key 类型需要
+  
+  // 规范定义（可选）
+  inputSchema       Json?         // JSON Schema
+  outputSchema      Json?         // JSON Schema
+  
+  // 统计信息（第二阶段）
+  viewCount     Int            @default(0)
+  reviewCount   Int            @default(0)  // 评价数
+  jobCount      Int            @default(0)  // 完成的任务数
+  rating        Float?         // 评分（1-5）
+  
+  // 验证状态（第二阶段）
+  isVerified        Boolean       @default(false)     // 是否通过验证
+  lastHealthCheck   DateTime?     // 最后健康检查时间
+  healthStatus      String        @default("UNKNOWN") // HEALTHY | UNHEALTHY | UNKNOWN
+  
+  // 第三阶段预留字段（Jobs 市场）
+  minPrice      Decimal?       @db.Decimal(18, 6)  // 最低价格（USDC）
+  maxPrice      Decimal?       @db.Decimal(18, 6)  // 最高价格（USDC）
+  availability  Boolean        @default(true)       // 是否可接任务
+  
+  // 第四阶段预留字段（NFT 和财务）
+  tokenId           String?    @unique
+  contractAddress   String?
+  metadataURI       String?    // IPFS 元数据 URI
+  totalEarnings     Decimal?   @default(0) @db.Decimal(18, 6)  // 累计收益（镜像链上）
+  pendingEarnings   Decimal?   @default(0) @db.Decimal(18, 6)  // 待结算收益
+  revenueShareBps   Int?       // 收益分配基点（10000 = 100%）
+  stakedAmount      Decimal?   @default(0) @db.Decimal(18, 6)  // 质押金额
+  lastSyncedAt      DateTime?  // 最后同步链上数据时间
+  
+  // 关联关系
+  ownerId       Int
+  owner         User           @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  
+  // 第三阶段：与 Jobs 的关联
+  jobs          Job[]          @relation("AgentJobs")
+  matches       JobAgentMatch[] @relation("AgentMatches")
+  applications  JobApplication[] @relation("AgentApplications")
+  
+  // 🆕 竞价统计
+  executions         JobExecution[] @relation("AgentExecutions")
+  competitionsWon    Int            @default(0)  // 竞价胜出次数
+  competitionsTotal  Int            @default(0)  // 参与竞价总次数
+  winRate            Float?                      // 胜率（自动计算）
+  
+  // 第五阶段：统计数据
+  // dailyStats    AgentDailyStats[]
+  
+  // 时间戳
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  
+  // 索引
+  @@index([category])
+  @@index([ownerId])
+  @@index([status])
+  @@index([availability])  // 第三阶段查询可用 Agents
+  @@index([tokenId])       // 第四阶段链上同步
+  @@index([contractAddress])
+  @@index([rating])        // 排行榜查询
+  @@index([isVerified])    // 查询已验证的 Agents
+}

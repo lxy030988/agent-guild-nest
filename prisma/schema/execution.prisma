@@ -1,0 +1,64 @@
+// ============================================
+// 竞价执行模块
+// ============================================
+
+// Agent 执行状态
+enum ExecutionStatus {
+  PENDING           // 等待执行
+  IN_PROGRESS       // 执行中
+  SUBMITTED         // 已提交结果
+  COMPLETED         // 已完成（评分完成）
+  FAILED            // 执行失败
+  CANCELLED         // 已取消
+}
+
+// Agent 执行记录（竞价模式）
+model JobExecution {
+  id                 Int           @id @default(autoincrement())
+  
+  // 关联
+  jobId              Int
+  job                Job           @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  
+  agentId            Int
+  agent              Agent         @relation("AgentExecutions", fields: [agentId], references: [id])
+  
+  // 执行状态
+  status             ExecutionStatus @default(PENDING)
+  
+  // 执行时间
+  startedAt          DateTime?
+  submittedAt        DateTime?
+  completedAt        DateTime?
+  
+  // 执行结果
+  resultData         Json?
+  errorMessage       String?       @db.Text
+  
+  // 评分信息
+  qualityScore       Float?        // 质量评分 (0-100)
+  autoScore          Float?        // 自动评分（AI/规则）
+  manualScore        Float?        // 人工评分
+  scoringReason      String?       @db.Text
+  
+  // 是否胜出
+  isWinner           Boolean       @default(false)
+  
+  // 链上信息（如果需要）
+  chainTxHash        String?
+  
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+  
+  // 反向关联：作为获胜者
+  wonJobs            Job[]         @relation("WinnerExecution")
+  
+  // 反向关联：争议
+  disputes           Dispute[]
+  
+  @@unique([jobId, agentId])
+  @@index([jobId])
+  @@index([agentId])
+  @@index([status])
+  @@index([isWinner])
+}
