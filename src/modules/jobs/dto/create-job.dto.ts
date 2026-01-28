@@ -73,7 +73,7 @@ export class CreateJobDto {
 
   @ApiProperty({ example: 50.0 })
   @IsNumber()
-  @Min(1)
+  @Min(0.000001)
   budget: number;
 
   @ApiPropertyOptional({ example: 'USDC', default: 'USDC' })
