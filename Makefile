@@ -73,8 +73,10 @@ build-MigrationFunction:
 	# Copy essential files from migration directory (package.json, index.js)
 	cp migration/index.js migration/package.json $(ARTIFACTS_DIR)/
 	# Assemble migration schema from split files
-	# Start with migration datasource (Prisma 5 with url)
-	cat migration/schema/datasource.prisma > $(ARTIFACTS_DIR)/schema.prisma
+	# Start with migration datasource (Prisma 7: NO URL in schema, only provider)
+	echo "datasource db {" > $(ARTIFACTS_DIR)/schema.prisma
+	echo "  provider = \"postgresql\"" >> $(ARTIFACTS_DIR)/schema.prisma
+	echo "}" >> $(ARTIFACTS_DIR)/schema.prisma
 	echo "" >> $(ARTIFACTS_DIR)/schema.prisma
 	# Add generator (from main prisma schema, compatible with Prisma 5)
 	echo "generator client {" >> $(ARTIFACTS_DIR)/schema.prisma
@@ -94,14 +96,25 @@ build-MigrationFunction:
 	cp -r prisma/migrations $(ARTIFACTS_DIR)/
 	# Force download of RHEL engines (especially schema-engine) during install
 	rm -rf $(ARTIFACTS_DIR)/node_modules $(ARTIFACTS_DIR)/package-lock.json
+	# Generate Prisma 7 Config for Migration
+	echo "import { defineConfig } from 'prisma/config';" > $(ARTIFACTS_DIR)/prisma.config.ts
+	echo "export default defineConfig({" >> $(ARTIFACTS_DIR)/prisma.config.ts
+	echo "  schema: 'schema.prisma'," >> $(ARTIFACTS_DIR)/prisma.config.ts
+	echo "  datasource: { url: process.env.DATABASE_URL }" >> $(ARTIFACTS_DIR)/prisma.config.ts
+	echo "});" >> $(ARTIFACTS_DIR)/prisma.config.ts
+	
+	# Prisma 7: Try to rely on PRISMA_CLI_BINARY_TARGETS and post-install script
+	# We also set PRISMA_ENGINES_CHECKSUM_IGNORE_MISSING=1 just in case
 	export PRISMA_CLI_BINARY_TARGETS=native,rhel-openssl-3.0.x && cd $(ARTIFACTS_DIR) && npm install --production --no-optional
-	# MANUAL FIX: Download missing schema-engine for RHEL (Prisma 5.22.0)
-	# Hash: 605197351a3c8bdd595af2d2a9bc3025bca48ea2
-	curl -L https://binaries.prisma.sh/all_commits/605197351a3c8bdd595af2d2a9bc3025bca48ea2/rhel-openssl-3.0.x/schema-engine.gz -o $(ARTIFACTS_DIR)/schema-engine.gz
+	
+	# MANUAL FIX (Prisma 7.3.0): Download missing schema-engine for RHEL
+	# Hash: 9d6ad21cbbceab97458517b147a6a09ff43aa735
+	curl -L https://binaries.prisma.sh/all_commits/9d6ad21cbbceab97458517b147a6a09ff43aa735/rhel-openssl-3.0.x/schema-engine.gz -o $(ARTIFACTS_DIR)/schema-engine.gz
 	gunzip $(ARTIFACTS_DIR)/schema-engine.gz
 	chmod +x $(ARTIFACTS_DIR)/schema-engine
 	mkdir -p $(ARTIFACTS_DIR)/node_modules/@prisma/engines
 	mv $(ARTIFACTS_DIR)/schema-engine $(ARTIFACTS_DIR)/node_modules/@prisma/engines/schema-engine-rhel-openssl-3.0.x
+	
 	# Generate Prisma Client
 	@echo "Generating Prisma Client for migration..."
 	# Prisma 7 will automatically download the needed engines based on binaryTargets in schema.prisma
@@ -110,11 +123,25 @@ build-MigrationFunction:
 	# Surgical cleanup for migration
 	@echo "Surgical cleanup for migration..."
 	# DO NOT remove prisma package for MigrationFunction, we need the CLI (via node_modules/prisma)
-	rm -rf $(ARTIFACTS_DIR)/node_modules/typescript
-	# rm -rf $(ARTIFACTS_DIR)/node_modules/effect
-	find $(ARTIFACTS_DIR)/node_modules -type d -name "test" -prune -exec rm -rf {} +
+	-rm -rf $(ARTIFACTS_DIR)/node_modules/typescript
+	# Prisma 7 CLI dependencies are complex. Let's keep effect, electric-sql, fast-check, and chevrotain.
+	# -rm -rf $(ARTIFACTS_DIR)/node_modules/effect
+	# -rm -rf $(ARTIFACTS_DIR)/node_modules/@electric-sql
+	# -rm -rf $(ARTIFACTS_DIR)/node_modules/fast-check
+	# -rm -rf $(ARTIFACTS_DIR)/node_modules/chevrotain
+	# -rm -rf $(ARTIFACTS_DIR)/node_modules/@prisma/studio* # RESTORED: Needed by Prisma 7 CLI
+	-rm -rf $(ARTIFACTS_DIR)/node_modules/react
+	-rm -rf $(ARTIFACTS_DIR)/node_modules/react-dom
+	-rm -rf $(ARTIFACTS_DIR)/node_modules/@types
+	# Remove lodash and other large utils if possible (ONLY if size is an issue)
+	# -rm -rf $(ARTIFACTS_DIR)/node_modules/lodash
+	# -rm -rf $(ARTIFACTS_DIR)/node_modules/remeda
+	# Remove unnecessary files from remaining node_modules
+	-find $(ARTIFACTS_DIR)/node_modules -type d -name "test" -prune -exec rm -rf {} +
+	-find $(ARTIFACTS_DIR)/node_modules -type d -name "tests" -prune -exec rm -rf {} +
+	-find $(ARTIFACTS_DIR)/node_modules -type d -name "docs" -prune -exec rm -rf {} +
+	-find $(ARTIFACTS_DIR)/node_modules -type d -name "examples" -prune -exec rm -rf {} +
 	# Remove unused engines (darwin, windows, debian, musl) but KEEP rhel-openssl-3.0.x
-	# For Prisma 5.22.0, remove unused platform binaries but KEEP rhel-openssl-3.0.x
 	find $(ARTIFACTS_DIR)/node_modules -name "libquery_engine-*darwin*" -delete
 	find $(ARTIFACTS_DIR)/node_modules -name "libquery_engine-*windows*" -delete
 	find $(ARTIFACTS_DIR)/node_modules -name "libquery_engine-*debian*" -delete
@@ -132,6 +159,11 @@ build-MigrationFunction:
 	find $(ARTIFACTS_DIR)/node_modules -name "query-engine-*windows*" -delete
 	find $(ARTIFACTS_DIR)/node_modules -name "query-engine-*debian*" -delete
 	find $(ARTIFACTS_DIR)/node_modules -name "query-engine-*musl*" -delete
+	# AGGRESSIVE CLEANUP: Remove source maps, definition files, and markdown docs
+	find $(ARTIFACTS_DIR)/node_modules -name "*.map" -type f -delete
+	find $(ARTIFACTS_DIR)/node_modules -name "*.d.ts" -type f -delete
+	find $(ARTIFACTS_DIR)/node_modules -name "*.md" -type f -delete
+	find $(ARTIFACTS_DIR)/node_modules -name "*.ts" -type f -delete
 	# Remove cache and bin symlinks
 	find $(ARTIFACTS_DIR)/node_modules/.bin -type l ! -exec test -e {} \; -delete
 	rm -rf $(ARTIFACTS_DIR)/node_modules/.cache

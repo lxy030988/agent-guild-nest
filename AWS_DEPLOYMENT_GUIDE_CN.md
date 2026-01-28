@@ -1,125 +1,125 @@
-# AWS Lambda 部署指南 (NestJS + Prisma)
+# AWS Lambda 部署操作手册 (NestJS + Prisma)
 
-本文档基于项目历史部署记录与故障排查经验生成，详细记录了如何将基于 NestJS 和 Prisma 的应用稳定部署到 AWS Lambda，并重点说明了构建优化与常见问题的解决方案。
+本文档是针对本项目 (`agent-guild-nest`) 的完整部署实操指南。请严格按照以下步骤执行，以确保应用能在 AWS Lambda 环境下稳定运行。
 
-## 1. 架构概述
+## 1. 环境准备 (Prerequisites)
 
-为了适应 AWS Lambda 的运行环境限制（如包体积限制、冷启动时间），本项目采用了**双函数架构**：
+在开始部署前，请确保本地终端安装了以下工具：
 
-1.  **`NestJSFunction` (API 服务)**
-    - **用途**: 处理 HTTP 请求。
-    - **Prisma 版本**: `7.3.0` (使用 `prisma/config.ts` 和 HTTP Adapter)。
-    - **优化**: 剔除 Prisma CLI、文档、以及所有非运行时依赖，仅保留 Query Engine。
-2.  **`MigrationFunction` (数据库迁移)**
-    - **用途**: 在部署后执行数据库结构更新 (`prisma migrate deploy`)。
-    - **Prisma 版本**: `5.22.0` (为了兼容性及独立的迁移逻辑)。
-    - **特殊处理**: 需要完整包含 `schema-engine` 二进制文件。
+- **AWS CLI**: 配置好 `~/.aws/credentials`，拥有足够的部署权限。
+- **AWS SAM CLI**: 用于构建和部署 Serverless 应用。
+- **Node.js (v20+)**: 本地开发环境。
+- **Make**: macOS/Linux 自带，用于执行构建脚本。
 
-## 2. 核心配置与稳定性保障
+### 关键配置说明
 
-本项目的稳定性依赖于 `Makefile` 中的特殊构建逻辑，以下是关键配置说明。
+- **环境变量 (`DATABASE_URL` 等)**: 生产环境的数据库连接串**必须**在 `template.yaml` 中的 `Environment.Variables` 部分配置，或者在部署后的 Lambda 控制台设置。
+- **构建逻辑**: 通过 `Makefile` 生成精简的产物。
+  - **Prisma 7 适配**: 采用了 `prisma.config.ts` 进行配置。`MigrationFunction` 的 `schema.prisma` 是在构建时通过拼接 `prisma/schema/*` 动态生成的。
+  - **引擎管理**: 我们在 `Makefile` 中手动下载了 Prisma 7.3.0 的 RHEL `schema-engine` 以确保迁移功能可用。
 
-### 2.1 解决跨平台二进制缺失问题 (Critical)
+## 2. 部署流程 (Deployment Workflow)
 
-在 macOS 环境下构建部署到 AWS Lambda (Amazon Linux/RHEL) 时，`npm install` 往往无法自动下载正确的 Prisma 引擎（特别是 `schema-engine`）。
+完整的部署包含三个核心步骤：**构建** -> **部署** -> **执行迁移**。
 
-**解决方案**: 在 `Makefile` 中手动下载指定版本的二进制文件。
+### 第一步：构建 (Build)
 
-```makefile
-# Makefile (Lines 98-104)
-# MANUAL FIX: Download missing schema-engine for RHEL (Prisma 5.22.0)
-# Hash: 605197351a3c8bdd595af2d2a9bc3025bca48ea2
-curl -L https://binaries.prisma.sh/all_commits/605197351a3c8bdd595af2d2a9bc3025bca48ea2/rhel-openssl-3.0.x/schema-engine.gz -o $(ARTIFACTS_DIR)/schema-engine.gz
-gunzip $(ARTIFACTS_DIR)/schema-engine.gz
-chmod +x $(ARTIFACTS_DIR)/schema-engine
-# 移动到 node_modules 正确位置
-mkdir -p $(ARTIFACTS_DIR)/node_modules/@prisma/engines
-mv $(ARTIFACTS_DIR)/schema-engine $(ARTIFACTS_DIR)/node_modules/@prisma/engines/schema-engine-rhel-openssl-3.0.x
+执行 SAM 构建命令。此命令会自动调用 `Makefile`，执行依赖安装、Prisma Client 生成、引擎下载及体积清理。
+
+```bash
+# 运行构建
+sam build
 ```
 
-### 2.2 极致体积压缩 (Surgical Cleanup)
+**构建过程中的关键日志**:
 
-AWS Lambda 限制解压后代码体积必须小于 250MB。Prisma + NestJS 极易超标。
+- `Building NestJSFunction...`: 开始构建主应用。
+- `Surgical cleanup of node_modules...`: 执行体积清理，移除 `@prisma/studio` 等大文件。
+- `Building MigrationFunction...`: 开始构建迁移函数。
+- `MANUAL FIX: Download missing schema-engine...`: **关键步骤**，确认看到正在通过 `curl` 下载 RHEL 版本的引擎。
+- `Build Succeeded`: 构建成功。
 
-**解决方案**: 在 `Makefile` 中执行外科手术式清理：
+### 第二步：部署 (Deploy) 🚨 **核心步骤**
 
-```makefile
-# NestJSFunction 清理逻辑
-# 1. 移除 Prisma CLI 和 Studio (Web UI)
-rm -rf $(ARTIFACTS_DIR)/node_modules/prisma
-rm -rf $(ARTIFACTS_DIR)/node_modules/@prisma/studio*
+**严禁**直接运行 `sam deploy` 而不指定模板文件，否则 SAM 可能会打包当前目录未清理的 `node_modules`。
+**必须**指向 `.aws-sam/build` 目录下的模板文件，以确保上传的是经过优化的小体积 Artifact。
 
-# 2. 移除所有非 RHEL 平台的引擎
-find $(ARTIFACTS_DIR)/node_modules -name "*darwin*" -delete
-find $(ARTIFACTS_DIR)/node_modules -name "*windows*" -delete
-find $(ARTIFACTS_DIR)/node_modules -name "*debian*" -delete
-
-# 3. 移除开发依赖的大文件
-rm -rf $(ARTIFACTS_DIR)/node_modules/typescript
-find $(ARTIFACTS_DIR)/node_modules -name "*.d.ts" -delete
-find $(ARTIFACTS_DIR)/node_modules -name "*.map" -delete
-rm -rf $(ARTIFACTS_DIR)/node_modules/@nestjs/cli
+```bash
+# 部署命令 (指定构建后的模板)
+sam deploy \
+    --template-file .aws-sam/build/template.yaml \
+    --stack-name agent-guild-nest1 \
+    --region us-east-1 \
+    --capabilities CAPABILITY_IAM \
+    --resolve-s3 \
+    --no-confirm-changeset \
+    --no-fail-on-empty-changeset
 ```
 
-## 3. 部署步骤 (Standard Procedure)
+- `--template-file .aws-sam/build/template.yaml`: **关键参数**，强制使用构建后的模板和产物。
+- `--stack-name`: 指定堆栈名称。
+- `--resolve-s3`: 自动管理 S3 Bucket。
 
-确保本地已安装 AWS SAM CLI, Docker (可选) 和 Node.js。
+**等待部署完成**: 终端会显示 CloudFormation 的进度条。出现 `Successfully created/updated stack` 即表示代码已更新至 Lambda。
 
-1.  **构建 (Build)**
+### 第三步：数据库迁移 (Database Migration)
 
-    ```bash
-    sam build
-    ```
+部署代码后，必须手动调用 `MigrationFunction` 来执行数据库更新 (`prisma migrate deploy`)。
 
-    _此步骤会自动调用 Makefile 及其中的下载/清理逻辑。_
+```bash
+# 调用迁移函数
+aws lambda invoke \
+    --function-name agent-guild-nest1-migration \
+    --payload '{}' \
+    response.json
 
-2.  **验证构建产物 (Verify)**
+# 查看执行结果
+cat response.json
+```
 
-    ```bash
-    # 检查 MigrationFunction 是否包含 schema-engine (约 30-40MB)
-    ls -lh .aws-sam/build/MigrationFunction/node_modules/@prisma/engines/
-    ```
+**成功标志**: `body` 字段显示 `"message": "Migration successful"`。
 
-3.  **部署 (Deploy)**
+## 3. 验证与监控 (Verification)
 
-    ```bash
-    sam deploy --stack-name agent-guild-nest1 --resolve-s3 --capabilities CAPABILITY_IAM
-    ```
+### API 测试
 
-4.  **执行数据库迁移 (Run Migration)**
-    部署完成后，必须手动调用一次迁移函数：
-    ```bash
-    aws lambda invoke --function-name agent-guild-nest1-migration --payload '{}' response.json
-    cat response.json
-    ```
-    _期望输出_: `"message": "Migration successful", "migrations": [...]`
+可以使用 `curl` 测试 API 是否正常响应：
 
-## 4. 历史故障排查记录 (Troubleshooting Log)
+```bash
+# 获取 API Gateway URL (在 sam deploy 输出中可以找到 Output: ApiUrl)
+export API_URL="https://your-api-d.execute-api.us-east-1.amazonaws.com"
 
-以下记录了项目在演进过程中遇到的严重问题及最终解决方案。
+# 测试 Job 列表 (验证数据库读取)
+curl -v "$API_URL/jobs?page=1&limit=5"
+```
 
-### 问题一：部署失败 "Unzipped size must be smaller than 256MB"
+预期返回: `200 OK` 和 JSON 数据。
 
-- **现象**: `sam deploy` 报错，提示 Lambda 函数体积过大（通常 > 500MB）。
-- **原因**: `node_modules` 中包含了 `@prisma/studio` (Prisma 的可视化界面)、`typescript` 编译器、以及多个平台的引擎文件 (darwin, windows 等)。
-- **解决**: 实施了上述 **2.2 极致体积压缩** 策略，将终产物压缩至 ~140MB。
+### 查看日志 (CloudWatch)
 
-### 问题二：运行时错误 "Could not find schema-engine binary"
+```bash
+# 查看 NestJS 主函数日志
+sam logs -n NestJSFunction --stack-name agent-guild-nest1 --tail
+```
 
-- **现象**: `MigrationFunction` 调用时报错，无法找到 `schema-engine-rhel-openssl-3.0.x`。
-- **原因**: 本地开发环境为 macOS，`npm install` 默认下载 `darwin` 引擎。虽然设置了 `PRISMA_CLI_BINARY_TARGETS`，但在某些构建环境下自动下载仍不稳定或未触发。
-- **解决**: 实施了上述 **2.1 手动下载** 策略，通过 `curl` 强制获取对应版本的二进制文件，确保文件 100% 存在。
+## 4. 常见故障排查 (Troubleshooting)
 
-### 问题三：API 500 错误 "The column ... does not exist"
+### Q1: 部署时提示 "Unzipped size must be smaller than 256MB"
 
-- **现象**: 部署成功后，访问 `/jobs` 接口返回 500 错误。日志显示数据库缺少 `competitionMode` 等字段。
-- **原因**: 本地修改了 `schema.prisma` 新增了字段，但开发过程中可能使用了 `prisma db push` 而未生成正式的迁移文件 (`migrations/xxx.sql`)。生产环境依赖 `migrate deploy`，因此并未应用这些变更。
+- **原因**: 很有可能你在执行 `sam deploy` 时忘记加上 `--template-file .aws-sam/build/template.yaml`。如果不加此参数，SAM 可能会尝试打包根目录下包含完整 `node_modules` 的源代码。
+- **解决**: 严格按照第二步的完整命令执行部署。
+
+### Q2: 迁移函数报错 "Could not find schema-engine binary" 或 "MODULE_NOT_FOUND"
+
+- **原因**: Lambda 环境缺少 Prisma 7 引擎文件，或者过度精简导致 Prisma CLI 核心依赖（如 `effect`, `fast-check`）被删除。
 - **解决**:
-  1.  使用 `prisma migrate diff` 或手动根据 schema 差异编写 SQL 补丁。
-  2.  创建新迁移文件 `prisma/migrations/20260128xxx_add_competition_mode/migration.sql`。
-  3.  重新构建并部署 `MigrationFunction`，执行迁移。
+  - 确保 `Makefile` 中包含了手动下载 `schema-engine-rhel-openssl-3.0.x` 的 `curl` 命令（Prisma 7.3.0 在 macOS build 环境下需要手动补救）。
+  - 确认 `Makefile` 的清理脚本保留了 `@prisma/studio-core`、`effect`、`fast-check` 等库。
 
----
+### Q3: API 返回 500 "The column ... does not exist"
 
-**维护建议**:
-每次修改 `schema.prisma` 后，请务必在本地运行 `npx prisma migrate dev --name <change_name>` 生成迁移文件并提交到 Git。AWS 生产环境完全依赖这些文件来同步数据库结构。
+- **原因**: 数据库 Schema 漂移。代码里有新字段，但数据库没更新。
+- **解决**:
+  1.  本地运行 `npx prisma migrate dev` 生成 SQL 文件并提交 Git。
+  2.  重新构建并部署 `MigrationFunction`。
+  3.  务必执行 **第三步：数据库迁移**。
