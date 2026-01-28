@@ -69,39 +69,13 @@ build-NestJSFunction:
 build-MigrationFunction:
 	@echo "Building MigrationFunction..."
 	mkdir -p $(ARTIFACTS_DIR)
-	# Copy essential files
 	# Copy essential files from migration directory (package.json, index.js)
 	cp migration/index.js migration/package.json $(ARTIFACTS_DIR)/
-	# Assemble migration schema from split files
-	# Start with migration datasource (Prisma 7: NO URL in schema, only provider)
-	echo "datasource db {" > $(ARTIFACTS_DIR)/schema.prisma
-	echo "  provider = \"postgresql\"" >> $(ARTIFACTS_DIR)/schema.prisma
-	echo "}" >> $(ARTIFACTS_DIR)/schema.prisma
-	echo "" >> $(ARTIFACTS_DIR)/schema.prisma
-	# Add generator (from main prisma schema, compatible with Prisma 5)
-	echo "generator client {" >> $(ARTIFACTS_DIR)/schema.prisma
-	echo "  provider = \"prisma-client-js\"" >> $(ARTIFACTS_DIR)/schema.prisma
-	echo "  binaryTargets = [\"native\", \"rhel-openssl-3.0.x\"]" >> $(ARTIFACTS_DIR)/schema.prisma
-	echo "}" >> $(ARTIFACTS_DIR)/schema.prisma
-	echo "" >> $(ARTIFACTS_DIR)/schema.prisma
-	# Append all business models
-	cat prisma/schema/user.prisma >> $(ARTIFACTS_DIR)/schema.prisma
-	cat prisma/schema/agent.prisma >> $(ARTIFACTS_DIR)/schema.prisma
-	cat prisma/schema/job.prisma >> $(ARTIFACTS_DIR)/schema.prisma
-	cat prisma/schema/execution.prisma >> $(ARTIFACTS_DIR)/schema.prisma
-	cat prisma/schema/transaction.prisma >> $(ARTIFACTS_DIR)/schema.prisma
-	cat prisma/schema/bill.prisma >> $(ARTIFACTS_DIR)/schema.prisma
-	cat prisma/schema/dispute.prisma >> $(ARTIFACTS_DIR)/schema.prisma
-	# Copy migrations directory from root prisma folder
-	cp -r prisma/migrations $(ARTIFACTS_DIR)/
+	# Copy prisma config and schema directory (Prisma 7 multi-file, same as NestJSFunction)
+	cp prisma.config.ts $(ARTIFACTS_DIR)/
+	cp -r prisma $(ARTIFACTS_DIR)/
 	# Force download of RHEL engines (especially schema-engine) during install
 	rm -rf $(ARTIFACTS_DIR)/node_modules $(ARTIFACTS_DIR)/package-lock.json
-	# Generate Prisma 7 Config for Migration
-	echo "import { defineConfig } from 'prisma/config';" > $(ARTIFACTS_DIR)/prisma.config.ts
-	echo "export default defineConfig({" >> $(ARTIFACTS_DIR)/prisma.config.ts
-	echo "  schema: 'schema.prisma'," >> $(ARTIFACTS_DIR)/prisma.config.ts
-	echo "  datasource: { url: process.env.DATABASE_URL }" >> $(ARTIFACTS_DIR)/prisma.config.ts
-	echo "});" >> $(ARTIFACTS_DIR)/prisma.config.ts
 	
 	# Prisma 7: Try to rely on PRISMA_CLI_BINARY_TARGETS and post-install script
 	# We also set PRISMA_ENGINES_CHECKSUM_IGNORE_MISSING=1 just in case
@@ -117,9 +91,8 @@ build-MigrationFunction:
 	
 	# Generate Prisma Client
 	@echo "Generating Prisma Client for migration..."
-	# Prisma 7 will automatically download the needed engines based on binaryTargets in schema.prisma
-	# Ensure binaryTargets includes "rhel-openssl-3.0.x"
-	cd $(ARTIFACTS_DIR) && npx -y prisma generate --schema=./schema.prisma
+	# Prisma 7 will automatically download the needed engines based on binaryTargets
+	cd $(ARTIFACTS_DIR) && npx -y prisma generate
 	# Surgical cleanup for migration
 	@echo "Surgical cleanup for migration..."
 	# DO NOT remove prisma package for MigrationFunction, we need the CLI (via node_modules/prisma)

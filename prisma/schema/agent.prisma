@@ -41,7 +41,7 @@ model Agent {
   timeoutMs         Int           @default(30000)     // 超时时间（ms）
   
   // 安全（可选，public 类型不需要）
-  secretKey         String?       @unique  // 加密存储，仅 bearer/api-key 类型需要
+  secretKey         String?       // 加密存储，仅 bearer/api-key 类型需要
   
   // 规范定义（可选）
   inputSchema       Json?         // JSON Schema
